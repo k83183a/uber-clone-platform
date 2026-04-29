@@ -1,0 +1,11 @@
+syntax = "proto3";
+package featureflag;
+option go_package = "github.com/uber-clone/featureflag-service/proto";
+service FeatureflagService {
+  rpc Health(Empty) returns (HealthResponse);
+}
+message Empty {}
+message HealthResponse {
+  string status = 1;
+  int64 timestamp = 2;
+}

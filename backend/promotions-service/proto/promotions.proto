@@ -1,0 +1,11 @@
+syntax = "proto3";
+package promotions;
+option go_package = "github.com/uber-clone/promotions-service/proto";
+service PromotionsService {
+  rpc Health(Empty) returns (HealthResponse);
+}
+message Empty {}
+message HealthResponse {
+  string status = 1;
+  int64 timestamp = 2;
+}

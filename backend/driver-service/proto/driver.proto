@@ -1,0 +1,11 @@
+syntax = "proto3";
+package driver;
+option go_package = "github.com/uber-clone/driver-service/proto";
+service DriverService {
+  rpc Health(Empty) returns (HealthResponse);
+}
+message Empty {}
+message HealthResponse {
+  string status = 1;
+  int64 timestamp = 2;
+}

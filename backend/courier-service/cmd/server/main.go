@@ -12,11 +12,11 @@ import (
   "google.golang.org/grpc"
   "gorm.io/driver/postgres"
   "gorm.io/gorm"
-  pb "github.com/uber-clone/location-service/proto"
+  pb "github.com/uber-clone/courier-service/proto"
 )
 
 type ServiceServer struct {
-  pb.UnimplementedLocationServiceServer
+  pb.UnimplementedCourierServiceServer
   DB *gorm.DB
 }
 
@@ -28,20 +28,20 @@ func main() {
   godotenv.Load()
   dsn := os.Getenv("DB_DSN")
   if dsn == "" {
-    dsn = "host=postgres user=postgres password=postgres dbname=locationdb port=5432 sslmode=disable"
+    dsn = "host=postgres user=postgres password=postgres dbname=courierdb port=5432 sslmode=disable"
   }
   db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
   if err != nil {
     log.Fatal("Failed to connect to database:", err)
   }
   grpcServer := grpc.NewServer()
-  pb.RegisterLocationServiceServer(grpcServer, &ServiceServer{DB: db})
-  lis, err := net.Listen("tcp", ":50051")
+  pb.RegisterCourierServiceServer(grpcServer, &ServiceServer{DB: db})
+  lis, err := net.Listen("tcp", ":50057")
   if err != nil {
     log.Fatal("Failed to listen:", err)
   }
   go func() {
-    log.Println("✅ Location Service running on port 50051")
+    log.Println("✅ Courier Service running on port 50057")
     if err := grpcServer.Serve(lis); err != nil {
       log.Fatal("Failed to serve:", err)
     }
