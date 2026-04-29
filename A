@@ -1,0 +1,7 @@
+cat > build.sh << 'EOF'
+# Paste ALL 8 parts from our conversation here
+# (Scroll up and copy from Part 1 through Part 8)
+EOF
+
+chmod +x build.sh
+./build.sh
