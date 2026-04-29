@@ -1,0 +1,1 @@
+syntax="proto3";package user;service UserService{rpc CreateProfile(CreateProfileRequest)returns(UserResponse);}message CreateProfileRequest{string user_id=1;string email=2;string full_name=3;string phone=4;string avatar_url=5;string role=6;}message UserResponse{string id=1;string user_id=2;string email=3;string full_name=4;string phone=5;string role=6;}

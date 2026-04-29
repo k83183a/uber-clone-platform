@@ -1,0 +1,1 @@
+syntax="proto3";package ride;service RideService{rpc RequestRide(RequestRideRequest)returns(RideResponse);}message RequestRideRequest{string rider_id=1;double pickup_lat=2;double pickup_lng=3;double dropoff_lat=4;double dropoff_lng=5;string ride_type=6;double fare_estimate=7;}message RideResponse{string id=1;string status=2;double fare=3;}
