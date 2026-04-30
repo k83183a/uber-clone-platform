@@ -1,11 +1,119 @@
 syntax = "proto3";
+
 package courier;
 option go_package = "github.com/uber-clone/courier-service/proto";
+
 service CourierService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc CreateParcel(CreateParcelRequest) returns (ParcelResponse);
+    rpc GetParcel(GetParcelRequest) returns (ParcelDetailResponse);
+    rpc UpdateParcelStatus(UpdateParcelStatusRequest) returns (Empty);
+    rpc CancelParcel(CancelParcelRequest) returns (Empty);
+    rpc AddDeliveryProof(AddDeliveryProofRequest) returns (Empty);
+    rpc ListUserParcels(ListUserParcelsRequest) returns (ListParcelsResponse);
+    rpc ListCourierParcels(ListCourierParcelsRequest) returns (ListParcelsResponse);
+    rpc GetTrackingInfo(GetTrackingInfoRequest) returns (TrackingResponse);
 }
+
+message CreateParcelRequest {
+    string sender_id = 1;
+    string sender_name = 2;
+    string sender_phone = 3;
+    string sender_address = 4;
+    double sender_lat = 5;
+    double sender_lng = 6;
+    string recipient_name = 7;
+    string recipient_phone = 8;
+    string recipient_address = 9;
+    double recipient_lat = 10;
+    double recipient_lng = 11;
+    string package_type = 12;
+    double weight_kg = 13;
+    string dimensions = 14;
+    string special_instructions = 15;
+    string payment_method = 16;
+}
+
+message ParcelResponse {
+    string id = 1;
+    string tracking_number = 2;
+    string status = 3;
+    double fee = 4;
+    string created_at = 5;
+}
+
+message ParcelDetailResponse {
+    string id = 1;
+    string tracking_number = 2;
+    string sender_name = 3;
+    string sender_phone = 4;
+    string sender_address = 5;
+    string recipient_name = 6;
+    string recipient_phone = 7;
+    string recipient_address = 8;
+    string package_type = 9;
+    double weight_kg = 10;
+    string dimensions = 11;
+    string status = 12;
+    double fee = 13;
+    string courier_id = 14;
+    string created_at = 15;
+}
+
+message GetParcelRequest {
+    string id = 1;
+    string tracking_number = 2;
+}
+
+message UpdateParcelStatusRequest {
+    string parcel_id = 1;
+    string status = 2;
+    string courier_id = 3;
+}
+
+message CancelParcelRequest {
+    string parcel_id = 1;
+    string reason = 2;
+}
+
+message AddDeliveryProofRequest {
+    string parcel_id = 1;
+    string proof_type = 2;
+    string image_url = 3;
+}
+
+message ListUserParcelsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListCourierParcelsRequest {
+    string courier_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListParcelsResponse {
+    repeated ParcelResponse parcels = 1;
+    int32 total = 2;
+}
+
+message GetTrackingInfoRequest {
+    string tracking_number = 1;
+}
+
+message TrackingResponse {
+    string tracking_number = 1;
+    string status = 2;
+    int64 estimated_delivery = 3;
+    repeated TrackingEvent events = 4;
+}
+
+message TrackingEvent {
+    string status = 1;
+    string location = 2;
+    int64 timestamp = 3;
+    string description = 4;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
