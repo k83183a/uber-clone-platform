@@ -1,11 +1,57 @@
 syntax = "proto3";
+
 package notification;
 option go_package = "github.com/uber-clone/notification-service/proto";
+
 service NotificationService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc SendPush(SendPushRequest) returns (SendResponse);
+    rpc SendEmail(SendEmailRequest) returns (SendResponse);
+    rpc SendSMS(SendSMSRequest) returns (SendResponse);
+    rpc UpdatePreferences(UpdatePreferencesRequest) returns (PreferencesResponse);
+    rpc GetPreferences(GetPreferencesRequest) returns (PreferencesResponse);
 }
-message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message SendPushRequest {
+    string user_id = 1;
+    string title = 2;
+    string body = 3;
+    map<string, string> data = 4;
+}
+
+message SendEmailRequest {
+    string user_id = 1;
+    string email = 2;
+    string subject = 3;
+    string html_body = 4;
+}
+
+message SendSMSRequest {
+    string user_id = 1;
+    string phone = 2;
+    string message = 3;
+}
+
+message SendResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message UpdatePreferencesRequest {
+    string user_id = 1;
+    bool push_enabled = 2;
+    bool email_enabled = 3;
+    bool sms_enabled = 4;
+    string push_token = 5;
+    string email = 6;
+    string phone = 7;
+}
+
+message GetPreferencesRequest {
+    string user_id = 1;
+}
+
+message PreferencesResponse {
+    bool push_enabled = 1;
+    bool email_enabled = 2;
+    bool sms_enabled = 3;
 }
