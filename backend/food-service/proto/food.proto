@@ -1,11 +1,134 @@
 syntax = "proto3";
+
 package food;
 option go_package = "github.com/uber-clone/food-service/proto";
+
 service FoodService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ListRestaurants(ListRestaurantsRequest) returns (ListRestaurantsResponse);
+    rpc GetRestaurant(GetRestaurantRequest) returns (Restaurant);
+    rpc GetMenu(GetMenuRequest) returns (GetMenuResponse);
+    rpc PlaceOrder(PlaceOrderRequest) returns (OrderResponse);
+    rpc GetOrder(GetOrderRequest) returns (OrderDetailResponse);
+    rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (Empty);
+    rpc ListUserOrders(ListUserOrdersRequest) returns (ListOrdersResponse);
 }
+
+message ListRestaurantsRequest {
+    double latitude = 1;
+    double longitude = 2;
+    string query = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}
+
+message ListRestaurantsResponse {
+    repeated Restaurant restaurants = 1;
+    int32 total = 2;
+}
+
+message Restaurant {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string address = 4;
+    double latitude = 5;
+    double longitude = 6;
+    string phone = 7;
+    string image_url = 8;
+    double rating = 9;
+    double min_order = 10;
+    double delivery_fee = 11;
+}
+
+message GetRestaurantRequest {
+    string id = 1;
+}
+
+message GetMenuRequest {
+    string restaurant_id = 1;
+    string category_id = 2;
+}
+
+message MenuItem {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    double price = 4;
+    double discount_price = 5;
+    string image_url = 6;
+    bool is_available = 7;
+    int32 preparation_time = 8;
+}
+
+message GetMenuResponse {
+    repeated MenuItem items = 1;
+}
+
+message PlaceOrderRequest {
+    string user_id = 1;
+    string restaurant_id = 2;
+    repeated OrderLineItem items = 3;
+    string payment_method = 4;
+    string delivery_address = 5;
+    double delivery_lat = 6;
+    double delivery_lng = 7;
+    string delivery_instructions = 8;
+}
+
+message OrderLineItem {
+    string menu_item_id = 1;
+    int32 quantity = 2;
+}
+
+message OrderResponse {
+    string id = 1;
+    string order_number = 2;
+    string status = 3;
+    double total = 4;
+    string created_at = 5;
+}
+
+message OrderDetailResponse {
+    string id = 1;
+    string order_number = 2;
+    string status = 3;
+    double subtotal = 4;
+    double delivery_fee = 5;
+    double tax = 6;
+    double total = 7;
+    repeated OrderItem items = 8;
+    string delivery_address = 9;
+    string created_at = 10;
+}
+
+message OrderItem {
+    string id = 1;
+    string name = 2;
+    int32 quantity = 3;
+    double unit_price = 4;
+    double subtotal = 5;
+}
+
+message GetOrderRequest {
+    string order_id = 1;
+}
+
+message UpdateOrderStatusRequest {
+    string order_id = 1;
+    string status = 2;
+    string driver_id = 3;
+    string reason = 4;
+}
+
+message ListUserOrdersRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListOrdersResponse {
+    repeated OrderResponse orders = 1;
+    int32 total = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
