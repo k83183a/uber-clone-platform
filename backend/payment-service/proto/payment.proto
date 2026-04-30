@@ -1,11 +1,62 @@
 syntax = "proto3";
+
 package payment;
 option go_package = "github.com/uber-clone/payment-service/proto";
+
 service PaymentService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc CreatePaymentIntent(CreatePaymentIntentRequest) returns (PaymentIntentResponse);
+    rpc ConfirmPayment(ConfirmPaymentRequest) returns (ConfirmPaymentResponse);
+    rpc GetTransaction(GetTransactionRequest) returns (TransactionResponse);
+    rpc RefundPayment(RefundPaymentRequest) returns (RefundResponse);
 }
-message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message CreatePaymentIntentRequest {
+    string user_id = 1;
+    int64 amount_cents = 2;
+    string currency = 3;
+    string service_type = 4;
+    string service_id = 5;
+    string connect_account_id = 6;
+}
+
+message PaymentIntentResponse {
+    string client_secret = 1;
+    string intent_id = 2;
+}
+
+message ConfirmPaymentRequest {
+    string intent_id = 1;
+    string payment_method_id = 2;
+}
+
+message ConfirmPaymentResponse {
+    bool success = 1;
+    string payment_id = 2;
+    string status = 3;
+}
+
+message GetTransactionRequest {
+    string service_id = 1;
+    string service_type = 2;
+}
+
+message TransactionResponse {
+    string id = 1;
+    string user_id = 2;
+    string service_type = 3;
+    string service_id = 4;
+    double amount = 5;
+    string status = 6;
+    string created_at = 7;
+}
+
+message RefundPaymentRequest {
+    string transaction_id = 1;
+    string reason = 2;
+}
+
+message RefundResponse {
+    bool success = 1;
+    string refund_id = 2;
+    double amount = 3;
 }
