@@ -1,11 +1,74 @@
 syntax = "proto3";
-package subscriptions;
-option go_package = "github.com/uber-clone/subscriptions-service/proto";
-service SubscriptionsService {
-  rpc Health(Empty) returns (HealthResponse);
+
+package subscription;
+option go_package = "github.com/uber-clone/subscription-service/proto";
+
+service SubscriptionService {
+    rpc GetPlans(Empty) returns (PlansResponse);
+    rpc GetActiveSubscription(GetActiveRequest) returns (SubscriptionResponse);
+    rpc CreateSubscription(CreateRequest) returns (SubscriptionResponse);
+    rpc CancelSubscription(CancelRequest) returns (Empty);
+    rpc IsEligibleForBenefit(EligibilityRequest) returns (EligibilityResponse);
+    rpc GetUserSubscription(GetUserSubscriptionRequest) returns (SubscriptionResponse);
 }
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message Plan {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    double price_gbp = 4;
+    repeated Benefit benefits = 5;
+}
+
+message Benefit {
+    string type = 1;
+    double value = 2;
+}
+
+message PlansResponse {
+    repeated Plan plans = 1;
+}
+
+message GetActiveRequest {
+    string rider_id = 1;
+}
+
+message SubscriptionResponse {
+    string id = 1;
+    string rider_id = 2;
+    string plan_id = 3;
+    string plan_name = 4;
+    string status = 5;
+    double discount_percent = 6;
+    bool free_delivery = 7;
+    int64 start_date = 8;
+    int64 end_date = 9;
+    bool auto_renew = 10;
+}
+
+message CreateRequest {
+    string rider_id = 1;
+    string plan_id = 2;
+    string payment_method_id = 3;
+}
+
+message CancelRequest {
+    string rider_id = 1;
+}
+
+message EligibilityRequest {
+    string rider_id = 1;
+    string benefit_type = 2;
+}
+
+message EligibilityResponse {
+    bool eligible = 1;
+    double discount_percent = 2;
+    bool free_delivery = 3;
+}
+
+message GetUserSubscriptionRequest {
+    string user_id = 1;
 }
