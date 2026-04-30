@@ -1,1 +1,92 @@
-syntax="proto3";package ride;service RideService{rpc RequestRide(RequestRideRequest)returns(RideResponse);}message RequestRideRequest{string rider_id=1;double pickup_lat=2;double pickup_lng=3;double dropoff_lat=4;double dropoff_lng=5;string ride_type=6;double fare_estimate=7;}message RideResponse{string id=1;string status=2;double fare=3;}
+syntax = "proto3";
+
+package ride;
+option go_package = "github.com/uber-clone/ride-service/proto";
+
+service RideService {
+    rpc RequestRide(RequestRideRequest) returns (RideResponse);
+    rpc GetRide(GetRideRequest) returns (RideDetailResponse);
+    rpc AcceptRide(AcceptRideRequest) returns (RideResponse);
+    rpc StartRide(StartRideRequest) returns (RideResponse);
+    rpc CompleteRide(CompleteRideRequest) returns (RideResponse);
+    rpc CancelRide(CancelRideRequest) returns (Empty);
+    rpc ListRiderRides(ListRidesRequest) returns (ListRidesResponse);
+    rpc ListDriverRides(ListRidesRequest) returns (ListRidesResponse);
+}
+
+message RequestRideRequest {
+    string rider_id = 1;
+    double pickup_lat = 2;
+    double pickup_lng = 3;
+    string pickup_address = 4;
+    double dropoff_lat = 5;
+    double dropoff_lng = 6;
+    string dropoff_address = 7;
+    string ride_type = 8;
+    double fare_estimate = 9;
+    string payment_method = 10;
+}
+
+message RideResponse {
+    string id = 1;
+    string status = 2;
+    double fare = 3;
+    string created_at = 4;
+}
+
+message RideDetailResponse {
+    string id = 1;
+    string rider_id = 2;
+    string driver_id = 3;
+    string status = 4;
+    double pickup_lat = 5;
+    double pickup_lng = 6;
+    string pickup_address = 7;
+    double dropoff_lat = 8;
+    double dropoff_lng = 9;
+    string dropoff_address = 10;
+    string ride_type = 11;
+    double fare_estimate = 12;
+    double final_fare = 13;
+    string created_at = 14;
+}
+
+message GetRideRequest {
+    string ride_id = 1;
+}
+
+message AcceptRideRequest {
+    string ride_id = 1;
+    string driver_id = 2;
+}
+
+message StartRideRequest {
+    string ride_id = 1;
+    string driver_id = 2;
+}
+
+message CompleteRideRequest {
+    string ride_id = 1;
+    string driver_id = 2;
+    double final_fare = 3;
+    double distance_km = 4;
+    int32 duration_min = 5;
+}
+
+message CancelRideRequest {
+    string ride_id = 1;
+    string cancelled_by = 2;
+    string reason = 3;
+}
+
+message ListRidesRequest {
+    string user_id = 1;
+    int32 limit = 2;
+    int32 offset = 3;
+}
+
+message ListRidesResponse {
+    repeated RideResponse rides = 1;
+}
+
+message Empty {}
