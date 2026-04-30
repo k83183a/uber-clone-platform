@@ -1,3 +1,184 @@
-version:'3.8'
-services:postgres:{image:postgis/postgis:15-3.4,environment:{POSTGRES_USER:postgres,POSTGRES_PASSWORD:postgres},ports:["5432:5432"],volumes:[pgdata:/var/lib/postgresql/data]}
-volumes:{pgdata:}
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgis/postgis:15-3.4
+    container_name: uber_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - uber_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis for Dispatch Service
+  redis:
+    image: redis:7-alpine
+    container_name: uber_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - uber_network
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  # Auth Service
+  auth-service:
+    build: ./backend/auth-service
+    container_name: uber_auth
+    environment:
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=authdb port=5432 sslmode=disable"
+      JWT_SECRET: "your-super-secret-jwt-key-change-in-production"
+      PORT: "50051"
+    ports:
+      - "50051:50051"
+    networks:
+      - uber_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # User Service
+  user-service:
+    build: ./backend/user-service
+    container_name: uber_user
+    environment:
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=userdb port=5432 sslmode=disable"
+      PORT: "50052"
+    ports:
+      - "50052:50052"
+    networks:
+      - uber_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Ride Service
+  ride-service:
+    build: ./backend/ride-service
+    container_name: uber_ride
+    environment:
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=ridedb port=5432 sslmode=disable"
+      KAFKA_BROKER: "kafka:9092"
+      PORT: "50053"
+    ports:
+      - "50053:50053"
+    networks:
+      - uber_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Location Service (WebSocket)
+  location-service:
+    build: ./backend/location-service
+    container_name: uber_location
+    environment:
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    networks:
+      - uber_network
+    restart: unless-stopped
+
+  # Dispatch Service (Redis GEO)
+  dispatch-service:
+    build: ./backend/dispatch-service
+    container_name: uber_dispatch
+    environment:
+      REDIS_ADDR: "redis:6379"
+      PORT: "50060"
+    ports:
+      - "50060:50060"
+    networks:
+      - uber_network
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # Payment Service
+  payment-service:
+    build: ./backend/payment-service
+    container_name: uber_payment
+    environment:
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=paymentdb port=5432 sslmode=disable"
+      STRIPE_SECRET_KEY: "${STRIPE_SECRET_KEY:-sk_test_placeholder}"
+      STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-whsec_placeholder}"
+      PORT: "50054"
+    ports:
+      - "50054:50054"
+      - "8082:8082"
+    networks:
+      - uber_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Notification Service
+  notification-service:
+    build: ./backend/notification-service
+    container_name: uber_notification
+    environment:
+      DB_DSN: "host=postgres user=postgres password=postgres dbname=notificationdb port=5432 sslmode=disable"
+      FCM_API_KEY: "${FCM_API_KEY:-placeholder}"
+      TWILIO_ACCOUNT_SID: "${TWILIO_ACCOUNT_SID:-placeholder}"
+      TWILIO_AUTH_TOKEN: "${TWILIO_AUTH_TOKEN:-placeholder}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-placeholder}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-placeholder}"
+      PORT: "50055"
+    ports:
+      - "50055:50055"
+      - "8083:8083"
+    networks:
+      - uber_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # API Gateway (Envoy)
+  api-gateway:
+    image: envoyproxy/envoy:v1.28-latest
+    container_name: uber_gateway
+    volumes:
+      - ./backend/api-gateway/envoy.yaml:/etc/envoy/envoy.yaml
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    networks:
+      - uber_network
+    depends_on:
+      - auth-service
+      - user-service
+      - ride-service
+      - location-service
+      - dispatch-service
+      - payment-service
+      - notification-service
+    restart: unless-stopped
+
+networks:
+  uber_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
