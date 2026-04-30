@@ -1,11 +1,75 @@
 syntax = "proto3";
+
 package dispatch;
 option go_package = "github.com/uber-clone/dispatch-service/proto";
+
 service DispatchService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc UpdateDriverLocation(UpdateDriverLocationRequest) returns (UpdateResponse);
+    rpc FindNearestDrivers(FindNearestDriversRequest) returns (FindNearestDriversResponse);
+    rpc GetDriverStatus(GetDriverStatusRequest) returns (GetDriverStatusResponse);
+    rpc SetDriverStatus(SetDriverStatusRequest) returns (UpdateResponse);
+    rpc GetActiveDriverCount(GetActiveDriverCountRequest) returns (GetActiveDriverCountResponse);
+    rpc GetSurgeMultiplier(GetSurgeMultiplierRequest) returns (GetSurgeMultiplierResponse);
 }
-message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message UpdateDriverLocationRequest {
+    string driver_id = 1;
+    double latitude = 2;
+    double longitude = 3;
+    string status = 4;
+}
+
+message FindNearestDriversRequest {
+    double latitude = 1;
+    double longitude = 2;
+    double radius_km = 3;
+    int32 limit = 4;
+}
+
+message NearbyDriver {
+    string driver_id = 1;
+    double distance_km = 2;
+    double latitude = 3;
+    double longitude = 4;
+}
+
+message FindNearestDriversResponse {
+    repeated NearbyDriver drivers = 1;
+}
+
+message GetDriverStatusRequest {
+    string driver_id = 1;
+}
+
+message GetDriverStatusResponse {
+    string status = 1;
+    double latitude = 2;
+    double longitude = 3;
+    int64 updated_at = 4;
+}
+
+message SetDriverStatusRequest {
+    string driver_id = 1;
+    string status = 2;
+}
+
+message GetActiveDriverCountRequest {
+    string zone = 1;
+}
+
+message GetActiveDriverCountResponse {
+    int32 count = 1;
+}
+
+message GetSurgeMultiplierRequest {
+    double latitude = 1;
+    double longitude = 2;
+}
+
+message GetSurgeMultiplierResponse {
+    double multiplier = 1;
+}
+
+message UpdateResponse {
+    bool success = 1;
 }
