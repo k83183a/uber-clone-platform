@@ -1,11 +1,75 @@
 syntax = "proto3";
+
 package promotions;
 option go_package = "github.com/uber-clone/promotions-service/proto";
+
 service PromotionsService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ValidatePromotion(ValidatePromotionRequest) returns (ValidatePromotionResponse);
+    rpc RedeemPromotion(RedeemPromotionRequest) returns (Empty);
+    rpc ListActivePromotions(ListActivePromotionsRequest) returns (ListActivePromotionsResponse);
+    rpc CreatePromotion(CreatePromotionRequest) returns (Promotion);
+    rpc GetAIPromotions(GetAIPromotionsRequest) returns (ListActivePromotionsResponse);
 }
+
+message ValidatePromotionRequest {
+    string code = 1;
+    string user_id = 2;
+    string service_type = 3;
+    double subtotal = 4;
+}
+
+message ValidatePromotionResponse {
+    bool valid = 1;
+    double discount_amount = 2;
+    string promotion_id = 3;
+    string message = 4;
+}
+
+message RedeemPromotionRequest {
+    string code = 1;
+    string user_id = 2;
+    string service_type = 3;
+    string service_id = 4;
+    double discount_amount = 5;
+}
+
+message ListActivePromotionsRequest {
+    string user_id = 1;
+    string service_type = 2;
+}
+
+message ListActivePromotionsResponse {
+    repeated Promotion promotions = 1;
+}
+
+message Promotion {
+    string id = 1;
+    string code = 2;
+    string name = 3;
+    string description = 4;
+    string discount_type = 5;
+    double discount_value = 6;
+    double min_order_amount = 7;
+}
+
+message CreatePromotionRequest {
+    string code = 1;
+    string name = 2;
+    string description = 3;
+    string discount_type = 4;
+    double discount_value = 5;
+    double min_order_amount = 6;
+    double max_discount_amount = 7;
+    int64 start_date = 8;
+    int64 end_date = 9;
+    int32 usage_limit = 10;
+    int32 per_user_limit = 11;
+    repeated string applicable_services = 12;
+    repeated string applicable_ride_types = 13;
+}
+
+message GetAIPromotionsRequest {
+    string user_id = 1;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
