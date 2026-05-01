@@ -1,11 +1,133 @@
 syntax = "proto3";
+
 package driver;
 option go_package = "github.com/uber-clone/driver-service/proto";
+
 service DriverService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc CreateDriverProfile(CreateDriverProfileRequest) returns (DriverResponse);
+    rpc GetDriverProfile(GetDriverProfileRequest) returns (DriverResponse);
+    rpc UpdateDriverStatus(UpdateDriverStatusRequest) returns (DriverResponse);
+    rpc UpdateOnlineStatus(UpdateOnlineStatusRequest) returns (Empty);
+    rpc AddVehicle(AddVehicleRequest) returns (VehicleResponse);
+    rpc GetVehicles(GetVehiclesRequest) returns (VehiclesResponse);
+    rpc UploadDocument(UploadDocumentRequest) returns (DocumentResponse);
+    rpc GetDocuments(GetDocumentsRequest) returns (DocumentsResponse);
+    rpc UpdateOnboardingStep(UpdateOnboardingStepRequest) returns (Empty);
+    rpc ListPendingDrivers(ListPendingDriversRequest) returns (ListDriversResponse);
 }
+
+message CreateDriverProfileRequest {
+    string user_id = 1;
+    string full_name = 2;
+    string phone = 3;
+    string email = 4;
+    string date_of_birth = 5;
+    string address = 6;
+    string city = 7;
+    string postcode = 8;
+}
+
+message DriverResponse {
+    string id = 1;
+    string user_id = 2;
+    string full_name = 3;
+    string phone = 4;
+    string email = 5;
+    string status = 6;
+    double rating = 7;
+    int32 total_trips = 8;
+    double total_earnings = 9;
+    bool online_status = 10;
+    int64 created_at = 11;
+}
+
+message GetDriverProfileRequest {
+    string driver_id = 1;
+    string user_id = 2;
+}
+
+message UpdateDriverStatusRequest {
+    string driver_id = 1;
+    string status = 2;
+    string suspension_reason = 3;
+}
+
+message UpdateOnlineStatusRequest {
+    string driver_id = 1;
+    bool online = 2;
+}
+
+message AddVehicleRequest {
+    string driver_id = 1;
+    string make = 2;
+    string model = 3;
+    int32 year = 4;
+    string color = 5;
+    string license_plate = 6;
+    string vehicle_type = 7;
+    bool is_electric = 8;
+    bool pet_friendly = 9;
+    bool wheelchair_accessible = 10;
+}
+
+message VehicleResponse {
+    string id = 1;
+    string driver_id = 2;
+    string make = 3;
+    string model = 4;
+    int32 year = 5;
+    string color = 6;
+    string license_plate = 7;
+    string vehicle_type = 8;
+    bool is_electric = 9;
+    bool pet_friendly = 10;
+    bool wheelchair_accessible = 11;
+}
+
+message GetVehiclesRequest {
+    string driver_id = 1;
+}
+
+message VehiclesResponse {
+    repeated VehicleResponse vehicles = 1;
+}
+
+message UploadDocumentRequest {
+    string driver_id = 1;
+    string document_type = 2;
+    string file_url = 3;
+}
+
+message DocumentResponse {
+    string id = 1;
+    string document_type = 2;
+    string file_url = 3;
+    string status = 4;
+    string rejection_reason = 5;
+    int64 verified_at = 6;
+}
+
+message GetDocumentsRequest {
+    string driver_id = 1;
+}
+
+message DocumentsResponse {
+    repeated DocumentResponse documents = 1;
+}
+
+message UpdateOnboardingStepRequest {
+    string driver_id = 1;
+    int32 step = 2;
+}
+
+message ListPendingDriversRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+}
+
+message ListDriversResponse {
+    repeated DriverResponse drivers = 1;
+    int32 total = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
