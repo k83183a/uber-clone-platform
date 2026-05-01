@@ -5,8 +5,10 @@ import (
     "encoding/json"
     "log"
     "net"
+    "net/http"
     "os"
     "os/signal"
+    "sync"
     "syscall"
     "time"
 
@@ -21,7 +23,6 @@ import (
     pb "github.com/uber-clone/bid-service/proto"
 )
 
-// BidRequest represents a ride bidding request from a rider
 type BidRequest struct {
     ID             string    `gorm:"primaryKey"`
     RiderID        string    `gorm:"index;not null"`
@@ -31,26 +32,24 @@ type BidRequest struct {
     DropoffLat     float64   `gorm:"not null"`
     DropoffLng     float64   `gorm:"not null"`
     DropoffAddress string
-    Status         string    `gorm:"default:'open'"` // open, expired, accepted
+    Status         string    `gorm:"default:'open'"`
     ExpiresAt      time.Time `gorm:"not null"`
     CreatedAt      time.Time
     UpdatedAt      time.Time
 }
 
-// DriverBid represents a bid submitted by a driver
 type DriverBid struct {
-    ID         string    `gorm:"primaryKey"`
-    RequestID  string    `gorm:"index;not null"`
-    DriverID   string    `gorm:"index;not null"`
-    BidAmount  float64   `gorm:"not null"`
-    Status     string    `gorm:"default:'active'"` // active, accepted, rejected
-    BidTime    time.Time
-    CreatedAt  time.Time
+    ID        string    `gorm:"primaryKey"`
+    RequestID string    `gorm:"index;not null"`
+    DriverID  string    `gorm:"index;not null"`
+    BidAmount float64   `gorm:"not null"`
+    Status    string    `gorm:"default:'active'"`
+    BidTime   time.Time
+    CreatedAt time.Time
 }
 
-// BidWebSocketHub manages live bid updates
 type BidWebSocketHub struct {
-    clients    map[string]map[*websocket.Conn]bool // requestID -> connections
+    clients    map[string]map[*websocket.Conn]bool
     clientsMu  sync.RWMutex
     register   chan *bidSubscription
     unregister chan *bidSubscription
@@ -63,27 +62,22 @@ type bidSubscription struct {
     Conn      *websocket.Conn
 }
 
-// BidServer handles gRPC requests
 type BidServer struct {
     pb.UnimplementedBidServiceServer
     DB  *gorm.DB
     hub *BidWebSocketHub
 }
 
-// NewBidWebSocketHub creates a new hub
 func NewBidWebSocketHub() *BidWebSocketHub {
     return &BidWebSocketHub{
         clients:    make(map[string]map[*websocket.Conn]bool),
         register:   make(chan *bidSubscription),
         unregister: make(chan *bidSubscription),
         broadcast:  make(chan *DriverBid, 256),
-        upgrader: websocket.Upgrader{
-            CheckOrigin: func(r *http.Request) bool { return true },
-        },
+        upgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
     }
 }
 
-// Run starts the WebSocket hub
 func (h *BidWebSocketHub) Run() {
     for {
         select {
@@ -94,7 +88,6 @@ func (h *BidWebSocketHub) Run() {
             }
             h.clients[sub.RequestID][sub.Conn] = true
             h.clientsMu.Unlock()
-
         case sub := <-h.unregister:
             h.clientsMu.Lock()
             if clients, ok := h.clients[sub.RequestID]; ok {
@@ -105,12 +98,10 @@ func (h *BidWebSocketHub) Run() {
             }
             h.clientsMu.Unlock()
             sub.Conn.Close()
-
         case bid := <-h.broadcast:
             h.clientsMu.RLock()
             clients := h.clients[bid.RequestID]
             h.clientsMu.RUnlock()
-
             msg, _ := json.Marshal(bid)
             for conn := range clients {
                 conn.WriteMessage(websocket.TextMessage, msg)
@@ -119,7 +110,6 @@ func (h *BidWebSocketHub) Run() {
     }
 }
 
-// HandleWebSocket upgrades HTTP to WebSocket for live bidding
 func (h *BidWebSocketHub) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
     requestID := r.URL.Query().Get("request_id")
     if requestID == "" {
@@ -129,18 +119,13 @@ func (h *BidWebSocketHub) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
     conn, err := h.upgrader.Upgrade(w, r, nil)
     if err != nil {
-        log.Printf("WebSocket upgrade error: %v", err)
         return
     }
 
-    sub := &bidSubscription{
-        RequestID: requestID,
-        Conn:      conn,
-    }
+    sub := &bidSubscription{RequestID: requestID, Conn: conn}
     h.register <- sub
     defer func() { h.unregister <- sub }()
 
-    // Keep connection alive
     for {
         _, _, err := conn.ReadMessage()
         if err != nil {
@@ -149,10 +134,9 @@ func (h *BidWebSocketHub) HandleWebSocket(w http.ResponseWriter, r *http.Request
     }
 }
 
-// CreateBidRequest creates a new ride bidding request
+// CreateBidRequest - Create bid request
 func (s *BidServer) CreateBidRequest(ctx context.Context, req *pb.CreateBidRequestRequest) (*pb.BidRequestResponse, error) {
     expiresAt := time.Now().Add(time.Duration(req.ExpiresInSeconds) * time.Second)
-
     bidReq := &BidRequest{
         ID:             generateID(),
         RiderID:        req.RiderId,
@@ -167,36 +151,24 @@ func (s *BidServer) CreateBidRequest(ctx context.Context, req *pb.CreateBidReque
         CreatedAt:      time.Now(),
         UpdatedAt:      time.Now(),
     }
-
     if err := s.DB.Create(bidReq).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create bid request")
     }
-
-    // In production: find nearest 10 drivers via dispatch service and send push notifications
-    // For MVP, we'll rely on drivers manually checking open bids
-
-    return &pb.BidRequestResponse{
-        RequestId: bidReq.ID,
-        Status:    bidReq.Status,
-        ExpiresAt: bidReq.ExpiresAt.Unix(),
-    }, nil
+    return &pb.BidRequestResponse{RequestId: bidReq.ID, Status: bidReq.Status, ExpiresAt: bidReq.ExpiresAt.Unix()}, nil
 }
 
-// SubmitBid submits a driver's bid for a ride request
+// SubmitBid - Driver submits bid
 func (s *BidServer) SubmitBid(ctx context.Context, req *pb.SubmitBidRequest) (*pb.Empty, error) {
-    // Check if bid request is still open
     var bidReq BidRequest
     if err := s.DB.Where("id = ? AND status = ?", req.RequestId, "open").First(&bidReq).Error; err != nil {
         return nil, status.Error(codes.NotFound, "bid request not found or expired")
     }
-
     if time.Now().After(bidReq.ExpiresAt) {
         bidReq.Status = "expired"
         s.DB.Save(&bidReq)
         return nil, status.Error(codes.FailedPrecondition, "bid request expired")
     }
 
-    // Check if driver already submitted a bid
     var existing DriverBid
     if err := s.DB.Where("request_id = ? AND driver_id = ?", req.RequestId, req.DriverId).First(&existing).Error; err == nil {
         return nil, status.Error(codes.AlreadyExists, "driver already submitted a bid")
@@ -211,23 +183,15 @@ func (s *BidServer) SubmitBid(ctx context.Context, req *pb.SubmitBidRequest) (*p
         BidTime:   time.Now(),
         CreatedAt: time.Now(),
     }
-
-    if err := s.DB.Create(bid).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to submit bid")
-    }
-
-    // Broadcast to all riders subscribed to this request via WebSocket
+    s.DB.Create(bid)
     s.hub.broadcast <- bid
-
     return &pb.Empty{}, nil
 }
 
-// GetBidsForRequest returns all bids for a ride request
+// GetBidsForRequest - Get all bids for request
 func (s *BidServer) GetBidsForRequest(ctx context.Context, req *pb.GetBidsRequest) (*pb.BidsList, error) {
     var bids []DriverBid
-    if err := s.DB.Where("request_id = ? AND status = ?", req.RequestId, "active").Order("bid_amount ASC").Find(&bids).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get bids")
-    }
+    s.DB.Where("request_id = ? AND status = ?", req.RequestId, "active").Order("bid_amount ASC").Find(&bids)
 
     var pbBids []*pb.DriverBid
     for _, b := range bids {
@@ -238,62 +202,46 @@ func (s *BidServer) GetBidsForRequest(ctx context.Context, req *pb.GetBidsReques
             BidTime:   b.BidTime.Unix(),
         })
     }
-
     return &pb.BidsList{Bids: pbBids}, nil
 }
 
-// AcceptBid accepts a driver's bid and creates a ride
+// AcceptBid - Accept a bid
 func (s *BidServer) AcceptBid(ctx context.Context, req *pb.AcceptBidRequest) (*pb.Empty, error) {
-    // Get the bid request
     var bidReq BidRequest
     if err := s.DB.Where("id = ?", req.RequestId).First(&bidReq).Error; err != nil {
         return nil, status.Error(codes.NotFound, "bid request not found")
     }
-
     if bidReq.Status != "open" {
         return nil, status.Error(codes.FailedPrecondition, "bid request already processed")
     }
-
     if time.Now().After(bidReq.ExpiresAt) {
         bidReq.Status = "expired"
         s.DB.Save(&bidReq)
         return nil, status.Error(codes.FailedPrecondition, "bid request expired")
     }
 
-    // Get the bid
     var bid DriverBid
     if err := s.DB.Where("id = ? AND request_id = ?", req.BidId, req.RequestId).First(&bid).Error; err != nil {
         return nil, status.Error(codes.NotFound, "bid not found")
     }
-
     if bid.Status != "active" {
         return nil, status.Error(codes.FailedPrecondition, "bid already processed")
     }
 
-    // Mark bid as accepted
     bid.Status = "accepted"
     s.DB.Save(&bid)
-
-    // Mark all other bids as rejected
     s.DB.Model(&DriverBid{}).Where("request_id = ? AND id != ?", req.RequestId, req.BidId).Update("status", "rejected")
-
-    // Mark bid request as accepted
     bidReq.Status = "accepted"
     s.DB.Save(&bidReq)
 
-    // In production: call ride-service to create a ride with the accepted driver and bid amount
-    // For now, we'll just log
     log.Printf("✅ Bid accepted: Ride created for request %s, driver %s, amount £%.2f", req.RequestId, bid.DriverID, bid.BidAmount)
-
     return &pb.Empty{}, nil
 }
 
-// GetOpenBidRequests returns open bid requests (for drivers to view)
+// GetOpenBidRequests - Get open bid requests
 func (s *BidServer) GetOpenBidRequests(ctx context.Context, req *pb.GetOpenBidRequestsRequest) (*pb.OpenBidRequestsResponse, error) {
     var bidReqs []BidRequest
-    if err := s.DB.Where("status = ? AND expires_at > ?", "open", time.Now()).Order("created_at ASC").Find(&bidReqs).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get open bid requests")
-    }
+    s.DB.Where("status = ? AND expires_at > ?", "open", time.Now()).Order("created_at ASC").Find(&bidReqs)
 
     var pbRequests []*pb.BidRequestSummary
     for _, br := range bidReqs {
@@ -308,17 +256,15 @@ func (s *BidServer) GetOpenBidRequests(ctx context.Context, req *pb.GetOpenBidRe
             ExpiresAt:     br.ExpiresAt.Unix(),
         })
     }
-
     return &pb.OpenBidRequestsResponse{Requests: pbRequests}, nil
 }
 
-// GetBidRequestDetails returns details of a specific bid request
+// GetBidRequestDetails - Get bid request details
 func (s *BidServer) GetBidRequestDetails(ctx context.Context, req *pb.GetBidRequestDetailsRequest) (*pb.BidRequestDetailsResponse, error) {
     var bidReq BidRequest
     if err := s.DB.Where("id = ?", req.RequestId).First(&bidReq).Error; err != nil {
         return nil, status.Error(codes.NotFound, "bid request not found")
     }
-
     return &pb.BidRequestDetailsResponse{
         RequestId:     bidReq.ID,
         RiderId:       bidReq.RiderID,
@@ -364,10 +310,9 @@ func main() {
     hub := NewBidWebSocketHub()
     go hub.Run()
 
-    // HTTP WebSocket endpoint for live bids
     http.HandleFunc("/ws/bids", hub.HandleWebSocket)
     go func() {
-        log.Println("✅ Bid Service WebSocket running on port 8087")
+        log.Println("✅ Bid Service WebSocket on :8087")
         log.Fatal(http.ListenAndServe(":8087", nil))
     }()
 
@@ -380,7 +325,7 @@ func main() {
     }
 
     go func() {
-        log.Println("✅ Bid Service gRPC running on port 50081")
+        log.Println("✅ Bid Service gRPC on :50081")
         if err := grpcServer.Serve(lis); err != nil {
             log.Fatal("Failed to serve:", err)
         }
@@ -390,5 +335,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Bid Service stopped")
 }
