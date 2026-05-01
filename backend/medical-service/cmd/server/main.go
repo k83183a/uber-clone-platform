@@ -19,29 +19,27 @@ import (
     pb "github.com/uber-clone/medical-service/proto"
 )
 
-// AmbulanceRequest represents an emergency ambulance request
 type AmbulanceRequest struct {
-    ID           string    `gorm:"primaryKey"`
-    UserID       string    `gorm:"index;not null"`
-    UserName     string
-    UserPhone    string
-    Latitude     float64   `gorm:"not null"`
-    Longitude    float64   `gorm:"not null"`
-    Address      string
-    Symptoms     string
-    Status       string    `gorm:"default:'pending'"` // pending, assigned, en_route, arrived, completed, cancelled
-    AmbulanceID  string    `gorm:"index"`
-    ETA          int       // minutes
-    RequestedAt  time.Time
-    AssignedAt   *time.Time
-    ArrivedAt    *time.Time
-    CompletedAt  *time.Time
-    CancelledAt  *time.Time
-    CancelledBy  string
-    Notes        string
+    ID          string     `gorm:"primaryKey"`
+    UserID      string     `gorm:"index;not null"`
+    UserName    string
+    UserPhone   string
+    Latitude    float64    `gorm:"not null"`
+    Longitude   float64    `gorm:"not null"`
+    Address     string
+    Symptoms    string
+    Status      string     `gorm:"default:'pending'"`
+    AmbulanceID string     `gorm:"index"`
+    ETA         int
+    RequestedAt time.Time
+    AssignedAt  *time.Time
+    ArrivedAt   *time.Time
+    CompletedAt *time.Time
+    CancelledAt *time.Time
+    CancelledBy string
+    Notes       string
 }
 
-// Ambulance represents an ambulance unit
 type Ambulance struct {
     ID            string    `gorm:"primaryKey"`
     VehicleNumber string    `gorm:"uniqueIndex;not null"`
@@ -49,55 +47,52 @@ type Ambulance struct {
     DriverPhone   string
     Latitude      float64
     Longitude     float64
-    Status        string    `gorm:"default:'available'"` // available, on_trip, out_of_service
+    Status        string    `gorm:"default:'available'"`
     CurrentTripID string
     LastUpdate    time.Time
     CreatedAt     time.Time
     UpdatedAt     time.Time
 }
 
-// MedicalAppointment represents a non-emergency medical appointment
 type MedicalAppointment struct {
-    ID             string     `gorm:"primaryKey"`
-    UserID         string     `gorm:"index;not null"`
-    ServiceType    string     `gorm:"not null"` // GP, dentist, physio, specialist
-    ProviderID     string     `gorm:"index"`
-    ProviderName   string
+    ID              string     `gorm:"primaryKey"`
+    UserID          string     `gorm:"index;not null"`
+    ServiceType     string     `gorm:"not null"`
+    ProviderID      string     `gorm:"index"`
+    ProviderName    string
     ProviderAddress string
     AppointmentDate time.Time
-    DurationMin    int
-    Reason         string
-    Status         string     `gorm:"default:'pending'"` // pending, confirmed, completed, cancelled
-    PaymentID      string
-    CreatedAt      time.Time
-    UpdatedAt      time.Time
-    CancelledAt    *time.Time
+    DurationMin     int
+    Reason          string
+    Status          string     `gorm:"default:'pending'"`
+    PaymentID       string
+    CreatedAt       time.Time
+    UpdatedAt       time.Time
+    CancelledAt     *time.Time
     CancelledReason string
 }
 
-// MedicalServiceProvider represents a healthcare provider
 type MedicalServiceProvider struct {
-    ID          string    `gorm:"primaryKey"`
-    Name        string    `gorm:"not null"`
-    Type        string    `gorm:"not null"`
-    Address     string
-    Latitude    float64
-    Longitude   float64
-    Phone       string
-    Email       string
-    Rating      float64
-    IsActive    bool      `gorm:"default:true"`
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+    ID        string    `gorm:"primaryKey"`
+    Name      string    `gorm:"not null"`
+    Type      string    `gorm:"not null"`
+    Address   string
+    Latitude  float64
+    Longitude float64
+    Phone     string
+    Email     string
+    Rating    float64
+    IsActive  bool      `gorm:"default:true"`
+    CreatedAt time.Time
+    UpdatedAt time.Time
 }
 
-// MedicalServer handles gRPC requests
 type MedicalServer struct {
     pb.UnimplementedMedicalServiceServer
     DB *gorm.DB
 }
 
-// RequestAmbulance creates an ambulance request
+// RequestAmbulance - Create ambulance request
 func (s *MedicalServer) RequestAmbulance(ctx context.Context, req *pb.AmbulanceRequest) (*pb.AmbulanceResponse, error) {
     ambulanceReq := &AmbulanceRequest{
         ID:          generateID(),
@@ -111,7 +106,6 @@ func (s *MedicalServer) RequestAmbulance(ctx context.Context, req *pb.AmbulanceR
         Status:      "pending",
         RequestedAt: time.Now(),
     }
-
     if err := s.DB.Create(ambulanceReq).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create ambulance request")
     }
@@ -119,12 +113,11 @@ func (s *MedicalServer) RequestAmbulance(ctx context.Context, req *pb.AmbulanceR
     // Find nearest available ambulance
     var ambulance Ambulance
     if err := s.DB.Where("status = ?", "available").First(&ambulance).Error; err == nil {
-        // Assign ambulance
         now := time.Now()
         ambulanceReq.AmbulanceID = ambulance.ID
         ambulanceReq.Status = "assigned"
         ambulanceReq.AssignedAt = &now
-        ambulanceReq.ETA = 10 // calculate ETA based on distance in production
+        ambulanceReq.ETA = 10
         ambulance.Status = "on_trip"
         ambulance.CurrentTripID = ambulanceReq.ID
         ambulance.UpdatedAt = now
@@ -133,21 +126,20 @@ func (s *MedicalServer) RequestAmbulance(ctx context.Context, req *pb.AmbulanceR
     }
 
     return &pb.AmbulanceResponse{
-        RequestId:    ambulanceReq.ID,
-        Status:       ambulanceReq.Status,
-        AmbulanceId:  ambulanceReq.AmbulanceID,
-        EtaMinutes:   int32(ambulanceReq.ETA),
-        Message:      "Ambulance dispatched to your location",
+        RequestId:   ambulanceReq.ID,
+        Status:      ambulanceReq.Status,
+        AmbulanceId: ambulanceReq.AmbulanceID,
+        EtaMinutes:  int32(ambulanceReq.ETA),
+        Message:     "Ambulance dispatched to your location",
     }, nil
 }
 
-// GetAmbulanceStatus returns the status of an ambulance request
+// GetAmbulanceStatus - Get ambulance request status
 func (s *MedicalServer) GetAmbulanceStatus(ctx context.Context, req *pb.GetAmbulanceStatusRequest) (*pb.AmbulanceResponse, error) {
     var ambulanceReq AmbulanceRequest
     if err := s.DB.Where("id = ?", req.RequestId).First(&ambulanceReq).Error; err != nil {
         return nil, status.Error(codes.NotFound, "ambulance request not found")
     }
-
     return &pb.AmbulanceResponse{
         RequestId:   ambulanceReq.ID,
         Status:      ambulanceReq.Status,
@@ -156,13 +148,12 @@ func (s *MedicalServer) GetAmbulanceStatus(ctx context.Context, req *pb.GetAmbul
     }, nil
 }
 
-// CancelAmbulance cancels an ambulance request
+// CancelAmbulance - Cancel ambulance request
 func (s *MedicalServer) CancelAmbulance(ctx context.Context, req *pb.CancelAmbulanceRequest) (*pb.Empty, error) {
     var ambulanceReq AmbulanceRequest
     if err := s.DB.Where("id = ?", req.RequestId).First(&ambulanceReq).Error; err != nil {
         return nil, status.Error(codes.NotFound, "ambulance request not found")
     }
-
     if ambulanceReq.Status != "pending" && ambulanceReq.Status != "assigned" {
         return nil, status.Error(codes.FailedPrecondition, "cannot cancel ambulance at this stage")
     }
@@ -173,30 +164,24 @@ func (s *MedicalServer) CancelAmbulance(ctx context.Context, req *pb.CancelAmbul
     ambulanceReq.CancelledBy = req.CancelledBy
     s.DB.Save(&ambulanceReq)
 
-    // Free up ambulance if assigned
     if ambulanceReq.AmbulanceID != "" {
         s.DB.Model(&Ambulance{}).Where("id = ?", ambulanceReq.AmbulanceID).Updates(map[string]interface{}{
-            "status":      "available",
+            "status":          "available",
             "current_trip_id": nil,
-            "updated_at":  now,
+            "updated_at":      now,
         })
     }
-
     return &pb.Empty{}, nil
 }
 
-// ListMedicalProviders lists healthcare providers
+// ListMedicalProviders - List healthcare providers
 func (s *MedicalServer) ListMedicalProviders(ctx context.Context, req *pb.ListMedicalProvidersRequest) (*pb.ListMedicalProvidersResponse, error) {
     var providers []MedicalServiceProvider
     query := s.DB.Where("is_active = ?", true)
-
     if req.Type != "" {
         query = query.Where("type = ?", req.Type)
     }
-
-    if err := query.Find(&providers).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list providers")
-    }
+    query.Find(&providers)
 
     var pbProviders []*pb.MedicalProvider
     for _, p := range providers {
@@ -209,11 +194,10 @@ func (s *MedicalServer) ListMedicalProviders(ctx context.Context, req *pb.ListMe
             Rating:  p.Rating,
         })
     }
-
     return &pb.ListMedicalProvidersResponse{Providers: pbProviders}, nil
 }
 
-// BookAppointment books a medical appointment
+// BookAppointment - Book medical appointment
 func (s *MedicalServer) BookAppointment(ctx context.Context, req *pb.BookAppointmentRequest) (*pb.AppointmentResponse, error) {
     providerName := ""
     providerAddress := ""
@@ -237,11 +221,9 @@ func (s *MedicalServer) BookAppointment(ctx context.Context, req *pb.BookAppoint
         CreatedAt:       time.Now(),
         UpdatedAt:       time.Now(),
     }
-
     if err := s.DB.Create(appointment).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to book appointment")
     }
-
     return &pb.AppointmentResponse{
         Id:             appointment.ID,
         ProviderId:     appointment.ProviderID,
@@ -252,7 +234,7 @@ func (s *MedicalServer) BookAppointment(ctx context.Context, req *pb.BookAppoint
     }, nil
 }
 
-// GetAppointment returns appointment details
+// GetAppointment - Get appointment details
 func (s *MedicalServer) GetAppointment(ctx context.Context, req *pb.GetAppointmentRequest) (*pb.AppointmentDetailResponse, error) {
     var appt MedicalAppointment
     if err := s.DB.Where("id = ?", req.AppointmentId).First(&appt).Error; err != nil {
@@ -260,27 +242,26 @@ func (s *MedicalServer) GetAppointment(ctx context.Context, req *pb.GetAppointme
     }
 
     return &pb.AppointmentDetailResponse{
-        Id:             appt.ID,
-        UserId:         appt.UserID,
-        ServiceType:    appt.ServiceType,
-        ProviderId:     appt.ProviderID,
-        ProviderName:   appt.ProviderName,
+        Id:              appt.ID,
+        UserId:          appt.UserID,
+        ServiceType:     appt.ServiceType,
+        ProviderId:      appt.ProviderID,
+        ProviderName:    appt.ProviderName,
         ProviderAddress: appt.ProviderAddress,
         AppointmentDate: appt.AppointmentDate.Unix(),
-        DurationMin:    int32(appt.DurationMin),
-        Reason:         appt.Reason,
-        Status:         appt.Status,
-        CreatedAt:      appt.CreatedAt.Unix(),
+        DurationMin:     int32(appt.DurationMin),
+        Reason:          appt.Reason,
+        Status:          appt.Status,
+        CreatedAt:       appt.CreatedAt.Unix(),
     }, nil
 }
 
-// CancelAppointment cancels a medical appointment
+// CancelAppointment - Cancel appointment
 func (s *MedicalServer) CancelAppointment(ctx context.Context, req *pb.CancelAppointmentRequest) (*pb.Empty, error) {
     var appt MedicalAppointment
     if err := s.DB.Where("id = ?", req.AppointmentId).First(&appt).Error; err != nil {
         return nil, status.Error(codes.NotFound, "appointment not found")
     }
-
     if appt.Status == "cancelled" || appt.Status == "completed" {
         return nil, status.Error(codes.FailedPrecondition, "appointment cannot be cancelled")
     }
@@ -289,23 +270,19 @@ func (s *MedicalServer) CancelAppointment(ctx context.Context, req *pb.CancelApp
     appt.Status = "cancelled"
     appt.CancelledAt = &now
     appt.CancelledReason = req.Reason
-
-    if err := s.DB.Save(&appt).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to cancel appointment")
-    }
-
+    s.DB.Save(&appt)
     return &pb.Empty{}, nil
 }
 
-// ListUserAppointments lists appointments for a user
+// ListUserAppointments - List user's appointments
 func (s *MedicalServer) ListUserAppointments(ctx context.Context, req *pb.ListUserAppointmentsRequest) (*pb.ListAppointmentsResponse, error) {
     var appointments []MedicalAppointment
     query := s.DB.Where("user_id = ?", req.UserId).Order("appointment_date DESC")
-
     offset := (req.Page - 1) * req.PageSize
-    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&appointments).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list appointments")
-    }
+    query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&appointments)
+
+    var total int64
+    s.DB.Model(&MedicalAppointment{}).Where("user_id = ?", req.UserId).Count(&total)
 
     var pbAppointments []*pb.AppointmentResponse
     for _, a := range appointments {
@@ -317,10 +294,6 @@ func (s *MedicalServer) ListUserAppointments(ctx context.Context, req *pb.ListUs
             Status:         a.Status,
         })
     }
-
-    var total int64
-    s.DB.Model(&MedicalAppointment{}).Where("user_id = ?", req.UserId).Count(&total)
-
     return &pb.ListAppointmentsResponse{Appointments: pbAppointments, Total: int32(total)}, nil
 }
 
@@ -390,5 +363,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Medical Service stopped")
 }
