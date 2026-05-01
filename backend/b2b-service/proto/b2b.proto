@@ -1,11 +1,132 @@
 syntax = "proto3";
+
 package b2b;
 option go_package = "github.com/uber-clone/b2b-service/proto";
-service B2bService {
-  rpc Health(Empty) returns (HealthResponse);
+
+service B2BService {
+    rpc RegisterCompany(RegisterCompanyRequest) returns (CompanyResponse);
+    rpc AddEmployee(AddEmployeeRequest) returns (EmployeeResponse);
+    rpc ListEmployees(ListEmployeesRequest) returns (ListEmployeesResponse);
+    rpc RequestApproval(RequestApprovalRequest) returns (ApprovalResponse);
+    rpc ApproveRequest(ApproveRequestRequest) returns (Empty);
+    rpc DenyRequest(DenyRequestRequest) returns (Empty);
+    rpc AddWalletFunds(AddFundsRequest) returns (BalanceResponse);
+    rpc GetWalletBalance(GetBalanceRequest) returns (BalanceResponse);
+    rpc CreateB2BRide(B2BRideRequest) returns (B2BRideResponse);
+    rpc GetCompanyTransactions(GetTransactionsRequest) returns (TransactionsList);
 }
+
+message RegisterCompanyRequest {
+    string name = 1;
+    string tax_id = 2;
+    string email = 3;
+    string phone = 4;
+    string address = 5;
+    string billing_address = 6;
+    string payment_method = 7;
+    double credit_limit = 8;
+}
+
+message CompanyResponse {
+    string id = 1;
+    string name = 2;
+    string status = 3;
+    double wallet_balance = 4;
+}
+
+message AddEmployeeRequest {
+    string company_id = 1;
+    string user_id = 2;
+    string role = 3;
+    string department = 4;
+    string cost_center = 5;
+    double monthly_budget = 6;
+}
+
+message EmployeeResponse {
+    string id = 1;
+    string user_id = 2;
+    string role = 3;
+    double monthly_budget = 4;
+}
+
+message ListEmployeesRequest {
+    string company_id = 1;
+}
+
+message ListEmployeesResponse {
+    repeated EmployeeResponse employees = 1;
+}
+
+message RequestApprovalRequest {
+    string company_id = 1;
+    string employee_id = 2;
+    string service_type = 3;
+    string service_request_json = 4;
+    double estimated_cost = 5;
+}
+
+message ApprovalResponse {
+    string approval_id = 1;
+    string status = 2;
+}
+
+message ApproveRequestRequest {
+    string approval_id = 1;
+    string approved_by = 2;
+}
+
+message DenyRequestRequest {
+    string approval_id = 1;
+    string reason = 2;
+}
+
+message AddFundsRequest {
+    string company_id = 1;
+    double amount = 2;
+    string payment_method_id = 3;
+}
+
+message GetBalanceRequest {
+    string company_id = 1;
+}
+
+message BalanceResponse {
+    double balance = 1;
+}
+
+message B2BRideRequest {
+    string employee_id = 1;
+    double pickup_lat = 2;
+    double pickup_lng = 3;
+    double dropoff_lat = 4;
+    double dropoff_lng = 5;
+    string ride_type = 6;
+    double estimated_cost = 7;
+}
+
+message B2BRideResponse {
+    string ride_id = 1;
+    string status = 2;
+    double fare = 3;
+}
+
+message GetTransactionsRequest {
+    string company_id = 1;
+    int64 from_date = 2;
+    int64 to_date = 3;
+}
+
+message Transaction {
+    string id = 1;
+    string service_type = 2;
+    string service_id = 3;
+    double amount = 4;
+    int64 created_at = 5;
+}
+
+message TransactionsList {
+    repeated Transaction transactions = 1;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
