@@ -22,21 +22,19 @@ import (
     pb "github.com/uber-clone/safety-service/proto"
 )
 
-// SOSAlert represents an emergency alert
 type SOSAlert struct {
-    ID         string    `gorm:"primaryKey"`
-    RideID     string    `gorm:"index;not null"`
-    UserID     string    `gorm:"index;not null"` // rider who triggered
-    DriverID   string    `gorm:"index"`
+    ID         string     `gorm:"primaryKey"`
+    RideID     string     `gorm:"index;not null"`
+    UserID     string     `gorm:"index;not null"`
+    DriverID   string     `gorm:"index"`
     Latitude   float64
     Longitude  float64
-    Status     string    `gorm:"default:'active'"` // active, resolved, false_alarm
+    Status     string     `gorm:"default:'active'"`
     AlertTime  time.Time
     ResolvedAt *time.Time
     Notes      string
 }
 
-// LiveSharingToken represents a shareable trip tracking link
 type LiveSharingToken struct {
     ID        string    `gorm:"primaryKey"`
     RideID    string    `gorm:"index;not null"`
@@ -45,40 +43,33 @@ type LiveSharingToken struct {
     CreatedAt time.Time
 }
 
-// DriverSelfieCheck represents a selfie verification request
 type DriverSelfieCheck struct {
-    ID         string    `gorm:"primaryKey"`
-    DriverID   string    `gorm:"index;not null"`
-    RideID     string    `gorm:"index"`
-    SelfieURL  string    `gorm:"not null"`
-    Verified   bool      `gorm:"default:false"`
+    ID         string     `gorm:"primaryKey"`
+    DriverID   string     `gorm:"index;not null"`
+    RideID     string     `gorm:"index"`
+    SelfieURL  string     `gorm:"not null"`
+    Verified   bool       `gorm:"default:false"`
     VerifiedAt *time.Time
     CreatedAt  time.Time
 }
 
-// AudioRecording represents a trip recording
 type AudioRecording struct {
-    ID         string    `gorm:"primaryKey"`
-    RideID     string    `gorm:"index;not null"`
-    UserID     string    `gorm:"index"` // who recorded (rider or driver)
-    RecordingURL string `gorm:"not null"`
-    DurationSec int
-    UploadedAt time.Time
-    CreatedAt  time.Time
+    ID           string    `gorm:"primaryKey"`
+    RideID       string    `gorm:"index;not null"`
+    UserID       string    `gorm:"index"`
+    RecordingURL string    `gorm:"not null"`
+    DurationSec  int
+    UploadedAt   time.Time
+    CreatedAt    time.Time
 }
 
-// SafetyServer handles gRPC requests
 type SafetyServer struct {
     pb.UnimplementedSafetyServiceServer
-    DB          *gorm.DB
-    upgrader    websocket.Upgrader
-    twilioSID   string
-    twilioToken string
-    twilioFrom  string
-    // In production: S3 client for selfie/audio storage
+    DB        *gorm.DB
+    upgrader  websocket.Upgrader
 }
 
-// ReportSOS triggers an emergency alert
+// ReportSOS - Trigger emergency alert
 func (s *SafetyServer) ReportSOS(ctx context.Context, req *pb.SOSRequest) (*pb.SOSResponse, error) {
     alert := &SOSAlert{
         ID:        generateID(),
@@ -89,13 +80,15 @@ func (s *SafetyServer) ReportSOS(ctx context.Context, req *pb.SOSRequest) (*pb.S
         Status:    "active",
         AlertTime: time.Now(),
     }
-
     if err := s.DB.Create(alert).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create alert")
     }
 
-    // In production: send SMS/call to emergency services (999 UK) via Twilio
+    // In production: call emergency services API (999 in UK)
     log.Printf("⚠️ SOS ALERT: Ride %s at (%f,%f) - Alert ID: %s", req.RideId, req.Latitude, req.Longitude, alert.ID)
+
+    // Send notification to emergency contacts
+    // s.notifyEmergencyContacts(req.UserId, alert.ID, req.Latitude, req.Longitude)
 
     return &pb.SOSResponse{
         AlertId: alert.ID,
@@ -103,7 +96,7 @@ func (s *SafetyServer) ReportSOS(ctx context.Context, req *pb.SOSRequest) (*pb.S
     }, nil
 }
 
-// CreateLiveSharingLink generates a shareable tracking link
+// CreateLiveSharingLink - Generate shareable tracking link
 func (s *SafetyServer) CreateLiveSharingLink(ctx context.Context, req *pb.LiveSharingRequest) (*pb.LiveSharingResponse, error) {
     token := generateSecureToken(32)
     expiresAt := time.Now().Add(time.Duration(req.ExpiryMinutes) * time.Minute)
@@ -115,7 +108,6 @@ func (s *SafetyServer) CreateLiveSharingLink(ctx context.Context, req *pb.LiveSh
         ExpiresAt: expiresAt,
         CreatedAt: time.Now(),
     }
-
     if err := s.DB.Create(share).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create sharing link")
     }
@@ -123,14 +115,14 @@ func (s *SafetyServer) CreateLiveSharingLink(ctx context.Context, req *pb.LiveSh
     shareURL := "https://share.yourapp.com/live/" + token
 
     return &pb.LiveSharingResponse{
-        ShareUrl:   shareURL,
-        ExpiresAt:  expiresAt.Unix(),
+        ShareUrl:  shareURL,
+        ExpiresAt: expiresAt.Unix(),
     }, nil
 }
 
-// VerifyDriverSelfie validates driver's selfie against stored photo
+// VerifyDriverSelfie - Verify driver selfie against profile photo
 func (s *SafetyServer) VerifyDriverSelfie(ctx context.Context, req *pb.SelfieRequest) (*pb.SelfieResponse, error) {
-    // In production: upload selfie to cloud storage
+    // In production: upload to S3 and call facial recognition API
     selfieURL := "/uploads/selfies/" + generateID() + ".jpg"
 
     check := &DriverSelfieCheck{
@@ -138,41 +130,24 @@ func (s *SafetyServer) VerifyDriverSelfie(ctx context.Context, req *pb.SelfieReq
         DriverID:  req.DriverId,
         RideID:    req.RideId,
         SelfieURL: selfieURL,
-        Verified:  false,
+        Verified:  true, // For MVP, always verify
         CreatedAt: time.Now(),
     }
-
-    // In production: call facial recognition service (AWS Rekognition)
-    // For MVP, we accept all selfies as verified
-    // In a real system, compare with driver's profile photo from user-service
-    verified := true
     now := time.Now()
-    check.Verified = verified
     check.VerifiedAt = &now
+    s.DB.Create(check)
 
-    if err := s.DB.Create(check).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to record selfie check")
-    }
-
-    if !verified {
-        // In production: notify dispatch to cancel ride
-        log.Printf("⚠️ Selfie verification FAILED for driver %s, ride %s", req.DriverId, req.RideId)
-        return &pb.SelfieResponse{
-            Matched: false,
-            Message: "Selfie verification failed. Please contact support.",
-        }, nil
-    }
+    log.Printf("Selfie verification for driver %s, ride %s: %v", req.DriverId, req.RideId, check.Verified)
 
     return &pb.SelfieResponse{
-        Matched: true,
-        Message: "Verification successful. You can proceed.",
+        Matched: check.Verified,
+        Message: map[bool]string{true: "Verification successful", false: "Selfie verification failed"}[check.Verified],
     }, nil
 }
 
-// StartAudioRecording initiates audio recording on the client
+// StartAudioRecording - Start audio recording for ride
 func (s *SafetyServer) StartAudioRecording(ctx context.Context, req *pb.StartRecordingRequest) (*pb.StartRecordingResponse, error) {
     recordingID := generateID()
-    // In production: send WebSocket signal to client to start recording
     log.Printf("🎤 Starting audio recording for ride %s, recording ID: %s", req.RideId, recordingID)
 
     return &pb.StartRecordingResponse{
@@ -181,9 +156,8 @@ func (s *SafetyServer) StartAudioRecording(ctx context.Context, req *pb.StartRec
     }, nil
 }
 
-// StopAudioRecording stops and uploads the recording
+// StopAudioRecording - Stop and upload recording
 func (s *SafetyServer) StopAudioRecording(ctx context.Context, req *pb.StopRecordingRequest) (*pb.StopRecordingResponse, error) {
-    // In production: client uploads audio file to cloud storage, then we store URL
     recordingURL := "/uploads/audio/" + req.RecordingId + ".m4a"
 
     recording := &AudioRecording{
@@ -195,10 +169,7 @@ func (s *SafetyServer) StopAudioRecording(ctx context.Context, req *pb.StopRecor
         UploadedAt:   time.Now(),
         CreatedAt:    time.Now(),
     }
-
-    if err := s.DB.Create(recording).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to save recording")
-    }
+    s.DB.Create(recording)
 
     return &pb.StopRecordingResponse{
         RecordingUrl: recordingURL,
@@ -206,7 +177,7 @@ func (s *SafetyServer) StopAudioRecording(ctx context.Context, req *pb.StopRecor
     }, nil
 }
 
-// GetActiveSOSAlerts returns active SOS alerts (admin/operations)
+// GetActiveSOSAlerts - Get active SOS alerts (admin)
 func (s *SafetyServer) GetActiveSOSAlerts(ctx context.Context, req *pb.Empty) (*pb.SOSAlertsResponse, error) {
     var alerts []SOSAlert
     if err := s.DB.Where("status = ?", "active").Find(&alerts).Error; err != nil {
@@ -228,7 +199,7 @@ func (s *SafetyServer) GetActiveSOSAlerts(ctx context.Context, req *pb.Empty) (*
     return &pb.SOSAlertsResponse{Alerts: pbAlerts}, nil
 }
 
-// ResolveSOSAlert marks an alert as resolved (admin)
+// ResolveSOSAlert - Mark SOS alert as resolved (admin)
 func (s *SafetyServer) ResolveSOSAlert(ctx context.Context, req *pb.ResolveSOSRequest) (*pb.Empty, error) {
     var alert SOSAlert
     if err := s.DB.Where("id = ?", req.AlertId).First(&alert).Error; err != nil {
@@ -239,19 +210,15 @@ func (s *SafetyServer) ResolveSOSAlert(ctx context.Context, req *pb.ResolveSOSRe
     alert.Status = "resolved"
     alert.ResolvedAt = &now
     alert.Notes = req.Notes
-
-    if err := s.DB.Save(&alert).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to resolve alert")
-    }
+    s.DB.Save(&alert)
 
     return &pb.Empty{}, nil
 }
 
-// WebSocket handler for live sharing (HTML page + stream)
+// WebSocket handler for live sharing
 func (s *SafetyServer) handleLiveSharingWS(w http.ResponseWriter, r *http.Request) {
     conn, err := s.upgrader.Upgrade(w, r, nil)
     if err != nil {
-        log.Printf("WebSocket upgrade error: %v", err)
         return
     }
     defer conn.Close()
@@ -267,11 +234,11 @@ func (s *SafetyServer) handleLiveSharingWS(w http.ResponseWriter, r *http.Reques
         return
     }
 
-    // In production: subscribe to location-service WebSocket for this ride
-    // and forward driver positions to the connected client
-    for {
-        // Simulate location updates; in real system, read from Kafka/Redis
-        time.Sleep(2 * time.Second)
+    // In production: subscribe to location-service for this ride
+    // For MVP: send simulated location updates
+    ticker := time.NewTicker(2 * time.Second)
+    defer ticker.Stop()
+    for range ticker.C {
         msg := `{"lat":51.5074,"lng":-0.1278,"status":"In transit"}`
         if err := conn.WriteMessage(websocket.TextMessage, []byte(msg)); err != nil {
             break
@@ -317,15 +284,14 @@ func main() {
     db.AutoMigrate(&SOSAlert{}, &LiveSharingToken{}, &DriverSelfieCheck{}, &AudioRecording{})
 
     server := &SafetyServer{
-        DB:        db,
-        upgrader:  websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+        DB:       db,
+        upgrader: websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
     }
 
-    // HTTP endpoints for live sharing
+    // WebSocket endpoint for live sharing
     http.HandleFunc("/ws/live", server.handleLiveSharingWS)
-
     go func() {
-        log.Println("✅ Safety Service HTTP (WebSocket) on :8085")
+        log.Println("✅ Safety Service WebSocket on :8085")
         log.Fatal(http.ListenAndServe(":8085", nil))
     }()
 
@@ -348,5 +314,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Safety Service stopped")
 }
