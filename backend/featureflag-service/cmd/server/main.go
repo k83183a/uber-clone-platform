@@ -2,7 +2,6 @@ package main
 
 import (
     "context"
-    "encoding/json"
     "log"
     "net"
     "os"
@@ -20,7 +19,6 @@ import (
     pb "github.com/uber-clone/featureflag-service/proto"
 )
 
-// FeatureFlag represents a dynamic feature toggle
 type FeatureFlag struct {
     ID          string    `gorm:"primaryKey"`
     Name        string    `gorm:"uniqueIndex;not null"`
@@ -31,39 +29,35 @@ type FeatureFlag struct {
     UpdatedAt   time.Time
 }
 
-// FeatureConfig represents a configuration value (e.g., surcharge amount)
 type FeatureConfig struct {
     ID          string    `gorm:"primaryKey"`
     Key         string    `gorm:"uniqueIndex;not null"`
-    Value       string    `gorm:"not null"` // JSON or plain string
+    Value       string    `gorm:"not null"`
     Description string
     UpdatedBy   string
     CreatedAt   time.Time
     UpdatedAt   time.Time
 }
 
-// FeatureFlagServer handles gRPC requests
 type FeatureFlagServer struct {
     pb.UnimplementedFeatureFlagServiceServer
     DB *gorm.DB
 }
 
-// GetFlag returns whether a feature is enabled
+// GetFlag - Get feature flag value
 func (s *FeatureFlagServer) GetFlag(ctx context.Context, req *pb.GetFlagRequest) (*pb.FlagResponse, error) {
     var flag FeatureFlag
     if err := s.DB.Where("name = ?", req.FlagName).First(&flag).Error; err != nil {
-        // Return disabled for non-existent flags
         return &pb.FlagResponse{Enabled: false}, nil
     }
     return &pb.FlagResponse{Enabled: flag.Enabled}, nil
 }
 
-// SetFlag enables or disables a feature (admin endpoint)
+// SetFlag - Set feature flag (admin)
 func (s *FeatureFlagServer) SetFlag(ctx context.Context, req *pb.SetFlagRequest) (*pb.Empty, error) {
     var flag FeatureFlag
     result := s.DB.Where("name = ?", req.FlagName).First(&flag)
     if result.Error != nil {
-        // Create if not exists
         flag = FeatureFlag{
             ID:        generateID(),
             Name:      req.FlagName,
@@ -84,7 +78,7 @@ func (s *FeatureFlagServer) SetFlag(ctx context.Context, req *pb.SetFlagRequest)
     return &pb.Empty{}, nil
 }
 
-// GetConfig returns a configuration value
+// GetConfig - Get configuration value
 func (s *FeatureFlagServer) GetConfig(ctx context.Context, req *pb.GetConfigRequest) (*pb.ConfigResponse, error) {
     var config FeatureConfig
     if err := s.DB.Where("key = ?", req.ConfigKey).First(&config).Error; err != nil {
@@ -93,7 +87,7 @@ func (s *FeatureFlagServer) GetConfig(ctx context.Context, req *pb.GetConfigRequ
     return &pb.ConfigResponse{Value: config.Value}, nil
 }
 
-// SetConfig sets a configuration value (admin endpoint)
+// SetConfig - Set configuration value (admin)
 func (s *FeatureFlagServer) SetConfig(ctx context.Context, req *pb.SetConfigRequest) (*pb.Empty, error) {
     var config FeatureConfig
     result := s.DB.Where("key = ?", req.ConfigKey).First(&config)
@@ -118,7 +112,7 @@ func (s *FeatureFlagServer) SetConfig(ctx context.Context, req *pb.SetConfigRequ
     return &pb.Empty{}, nil
 }
 
-// ListAllFlags returns all feature flags
+// ListAllFlags - List all feature flags
 func (s *FeatureFlagServer) ListAllFlags(ctx context.Context, req *pb.Empty) (*pb.FlagsList, error) {
     var flags []FeatureFlag
     if err := s.DB.Find(&flags).Error; err != nil {
@@ -131,7 +125,7 @@ func (s *FeatureFlagServer) ListAllFlags(ctx context.Context, req *pb.Empty) (*p
     return &pb.FlagsList{Flags: result}, nil
 }
 
-// ListAllConfigs returns all configurations
+// ListAllConfigs - List all configurations
 func (s *FeatureFlagServer) ListAllConfigs(ctx context.Context, req *pb.Empty) (*pb.ConfigsList, error) {
     var configs []FeatureConfig
     if err := s.DB.Find(&configs).Error; err != nil {
@@ -162,7 +156,7 @@ func main() {
 
     dsn := os.Getenv("DB_DSN")
     if dsn == "" {
-        dsn = "host=postgres user=postgres password=postgres dbname=featureflagdb port=5432 sslmode=disable"
+        dsn = "host=postgres user=postgres password=postgres dbname=featuredb port=5432 sslmode=disable"
     }
 
     db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
@@ -172,7 +166,7 @@ func main() {
 
     db.AutoMigrate(&FeatureFlag{}, &FeatureConfig{})
 
-    // Seed default feature flags
+    // Seed default flags
     var count int64
     db.Model(&FeatureFlag{}).Count(&count)
     if count == 0 {
@@ -183,15 +177,10 @@ func main() {
             {ID: generateID(), Name: "caz_surcharge.enabled", Enabled: true, Description: "Enable Clean Air Zone surcharge", CreatedAt: time.Now(), UpdatedAt: time.Now()},
             {ID: generateID(), Name: "loyalty.enabled", Enabled: true, Description: "Enable loyalty points", CreatedAt: time.Now(), UpdatedAt: time.Now()},
             {ID: generateID(), Name: "subscriptions.enabled", Enabled: true, Description: "Enable subscriptions", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-            {ID: generateID(), Name: "promotions.enabled", Enabled: true, Description: "Enable promotions", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-            {ID: generateID(), Name: "incentives.enabled", Enabled: true, Description: "Enable driver incentives", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-            {ID: generateID(), Name: "chat.enabled", Enabled: true, Description: "Enable chat feature", CreatedAt: time.Now(), UpdatedAt: time.Now()},
-            {ID: generateID(), Name: "safety_sos.enabled", Enabled: true, Description: "Enable SOS button", CreatedAt: time.Now(), UpdatedAt: time.Now()},
         }
         db.Create(&defaultFlags)
         log.Println("Seeded default feature flags")
 
-        // Seed default configs
         defaultConfigs := []FeatureConfig{
             {ID: generateID(), Key: "caz_surcharge.amount", Value: "2.50", Description: "Clean Air Zone surcharge in GBP", CreatedAt: time.Now(), UpdatedAt: time.Now()},
             {ID: generateID(), Key: "surge.max_multiplier", Value: "3.0", Description: "Maximum surge multiplier", CreatedAt: time.Now(), UpdatedAt: time.Now()},
@@ -220,5 +209,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Feature Flag Service stopped")
 }
