@@ -1,11 +1,118 @@
 syntax = "proto3";
+
 package onboarding;
 option go_package = "github.com/uber-clone/onboarding-service/proto";
+
 service OnboardingService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc StartOnboarding(StartOnboardingRequest) returns (StartOnboardingResponse);
+    rpc GetOnboardingStatus(GetOnboardingStatusRequest) returns (OnboardingStatusResponse);
+    rpc CompleteStep(CompleteStepRequest) returns (Empty);
+    rpc UpdateDocumentStatus(UpdateDocumentStatusRequest) returns (Empty);
+    rpc UpdateBackgroundStatus(UpdateBackgroundStatusRequest) returns (Empty);
+    rpc UpdateTrainingStatus(UpdateTrainingStatusRequest) returns (Empty);
+    rpc UpdatePaymentStatus(UpdatePaymentStatusRequest) returns (Empty);
+    rpc AdminApprove(AdminApproveRequest) returns (Empty);
+    rpc AdminReject(AdminRejectRequest) returns (Empty);
+    rpc ListPendingApplications(ListPendingApplicationsRequest) returns (ListPendingApplicationsResponse);
 }
+
+message StartOnboardingRequest {
+    string user_id = 1;
+    string email = 2;
+    string phone = 3;
+    string full_name = 4;
+    string referred_by = 5;
+}
+
+message StartOnboardingResponse {
+    string session_id = 1;
+    int32 current_step = 2;
+    string status = 3;
+    string referral_code = 4;
+}
+
+message GetOnboardingStatusRequest {
+    string session_id = 1;
+    string user_id = 2;
+}
+
+message StepStatus {
+    int32 step_number = 1;
+    string step_name = 2;
+    bool completed = 3;
+    int64 completed_at = 4;
+}
+
+message OnboardingStatusResponse {
+    string session_id = 1;
+    string driver_id = 2;
+    int32 current_step = 3;
+    string status = 4;
+    repeated StepStatus steps = 5;
+    string document_status = 6;
+    string background_status = 7;
+    string training_status = 8;
+    string payment_status = 9;
+    bool admin_approved = 10;
+}
+
+message CompleteStepRequest {
+    string session_id = 1;
+    int32 step_number = 2;
+    string step_name = 3;
+    string step_data = 4;
+}
+
+message UpdateDocumentStatusRequest {
+    string session_id = 1;
+    string status = 2;
+}
+
+message UpdateBackgroundStatusRequest {
+    string session_id = 1;
+    string status = 2;
+}
+
+message UpdateTrainingStatusRequest {
+    string session_id = 1;
+    string status = 2;
+}
+
+message UpdatePaymentStatusRequest {
+    string session_id = 1;
+    string status = 2;
+}
+
+message AdminApproveRequest {
+    string session_id = 1;
+    string admin_id = 2;
+}
+
+message AdminRejectRequest {
+    string session_id = 1;
+    string admin_id = 2;
+    string reason = 3;
+}
+
+message ListPendingApplicationsRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+}
+
+message OnboardingSummary {
+    string session_id = 1;
+    string driver_id = 2;
+    string email = 3;
+    string phone = 4;
+    int32 current_step = 5;
+    string document_status = 6;
+    string background_status = 7;
+    int64 created_at = 8;
+}
+
+message ListPendingApplicationsResponse {
+    repeated OnboardingSummary applications = 1;
+    int32 total = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
