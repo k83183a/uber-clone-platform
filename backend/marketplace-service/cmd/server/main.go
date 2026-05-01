@@ -19,7 +19,6 @@ import (
     pb "github.com/uber-clone/marketplace-service/proto"
 )
 
-// Listing represents an item for sale or rent
 type Listing struct {
     ID          string     `gorm:"primaryKey"`
     SellerID    string     `gorm:"index;not null"`
@@ -27,28 +26,27 @@ type Listing struct {
     Description string
     Category    string     `gorm:"index"`
     Price       float64    `gorm:"not null"`
-    PriceType   string     `gorm:"default:'fixed'"` // fixed, negotiable, auction
-    ListingType string     `gorm:"not null"`        // for_sale, for_rent, auction
-    Condition   string     `gorm:"default:'used'"`  // new, like_new, used, refurbished
-    Images      string     `gorm:"type:text"`       // JSON array of image URLs
-    Location    string     // city/area
+    PriceType   string     `gorm:"default:'fixed'"`
+    ListingType string     `gorm:"not null"`
+    Condition   string     `gorm:"default:'used'"`
+    Images      string     `gorm:"type:text"`
+    Location    string
     Latitude    float64
     Longitude   float64
-    Status      string     `gorm:"default:'active'"` // active, sold, rented, cancelled, expired
+    Status      string     `gorm:"default:'active'"`
     ViewCount   int        `gorm:"default:0"`
     CreatedAt   time.Time
     UpdatedAt   time.Time
     ExpiresAt   *time.Time
 }
 
-// Transaction represents a completed sale or rental
 type MarketplaceTransaction struct {
-    ID          string    `gorm:"primaryKey"`
-    ListingID   string    `gorm:"index;not null"`
-    BuyerID     string    `gorm:"index;not null"`
-    SellerID    string    `gorm:"index;not null"`
-    Amount      float64   `gorm:"not null"`
-    Status      string    `gorm:"default:'pending'"` // pending, completed, refunded
+    ID          string     `gorm:"primaryKey"`
+    ListingID   string     `gorm:"index;not null"`
+    BuyerID     string     `gorm:"index;not null"`
+    SellerID    string     `gorm:"index;not null"`
+    Amount      float64    `gorm:"not null"`
+    Status      string     `gorm:"default:'pending'"`
     PaymentID   string
     RentalStart *time.Time
     RentalEnd   *time.Time
@@ -56,21 +54,14 @@ type MarketplaceTransaction struct {
     CompletedAt *time.Time
 }
 
-// MarketplaceServer handles gRPC requests
 type MarketplaceServer struct {
     pb.UnimplementedMarketplaceServiceServer
     DB *gorm.DB
 }
 
-// CreateListing creates a new listing
+// CreateListing - Create new listing
 func (s *MarketplaceServer) CreateListing(ctx context.Context, req *pb.CreateListingRequest) (*pb.ListingResponse, error) {
-    imagesJSON := "[]"
-    if len(req.Images) > 0 {
-        // In production: marshal to JSON
-    }
-
-    expiresAt := time.Now().AddDate(0, 1, 0) // 1 month expiry by default
-
+    expiresAt := time.Now().AddDate(0, 1, 0)
     listing := &Listing{
         ID:          generateID(),
         SellerID:    req.SellerId,
@@ -81,7 +72,6 @@ func (s *MarketplaceServer) CreateListing(ctx context.Context, req *pb.CreateLis
         PriceType:   req.PriceType,
         ListingType: req.ListingType,
         Condition:   req.Condition,
-        Images:      imagesJSON,
         Location:    req.Location,
         Latitude:    req.Latitude,
         Longitude:   req.Longitude,
@@ -90,34 +80,26 @@ func (s *MarketplaceServer) CreateListing(ctx context.Context, req *pb.CreateLis
         UpdatedAt:   time.Now(),
         ExpiresAt:   &expiresAt,
     }
-
     if err := s.DB.Create(listing).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create listing")
     }
-
     return &pb.ListingResponse{
         Id:          listing.ID,
         SellerId:    listing.SellerID,
         Title:       listing.Title,
-        Description: listing.Description,
-        Category:    listing.Category,
         Price:       listing.Price,
-        PriceType:   listing.PriceType,
         ListingType: listing.ListingType,
-        Condition:   listing.Condition,
         Status:      listing.Status,
         CreatedAt:   listing.CreatedAt.Unix(),
     }, nil
 }
 
-// GetListing returns listing details
+// GetListing - Get listing details
 func (s *MarketplaceServer) GetListing(ctx context.Context, req *pb.GetListingRequest) (*pb.ListingDetailResponse, error) {
     var listing Listing
     if err := s.DB.Where("id = ?", req.ListingId).First(&listing).Error; err != nil {
         return nil, status.Error(codes.NotFound, "listing not found")
     }
-
-    // Increment view count
     s.DB.Model(&listing).Update("view_count", gorm.Expr("view_count + 1"))
 
     return &pb.ListingDetailResponse{
@@ -130,21 +112,17 @@ func (s *MarketplaceServer) GetListing(ctx context.Context, req *pb.GetListingRe
         PriceType:   listing.PriceType,
         ListingType: listing.ListingType,
         Condition:   listing.Condition,
-        Images:      []string{}, // Parse from JSON
         Location:    listing.Location,
-        Latitude:    listing.Latitude,
-        Longitude:   listing.Longitude,
         Status:      listing.Status,
         ViewCount:   int32(listing.ViewCount),
         CreatedAt:   listing.CreatedAt.Unix(),
     }, nil
 }
 
-// ListListings lists listings with filters
+// ListListings - List listings with filters
 func (s *MarketplaceServer) ListListings(ctx context.Context, req *pb.ListListingsRequest) (*pb.ListListingsResponse, error) {
     var listings []Listing
     query := s.DB.Where("status = ?", "active")
-
     if req.Category != "" {
         query = query.Where("category = ?", req.Category)
     }
@@ -162,9 +140,7 @@ func (s *MarketplaceServer) ListListings(ctx context.Context, req *pb.ListListin
     }
 
     offset := (req.Page - 1) * req.PageSize
-    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Order("created_at DESC").Find(&listings).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list listings")
-    }
+    query.Offset(int(offset)).Limit(int(req.PageSize)).Order("created_at DESC").Find(&listings)
 
     var total int64
     s.DB.Model(&Listing{}).Where("status = ?", "active").Count(&total)
@@ -173,7 +149,6 @@ func (s *MarketplaceServer) ListListings(ctx context.Context, req *pb.ListListin
     for _, l := range listings {
         pbListings = append(pbListings, &pb.ListingResponse{
             Id:          l.ID,
-            SellerId:    l.SellerID,
             Title:       l.Title,
             Price:       l.Price,
             ListingType: l.ListingType,
@@ -181,19 +156,15 @@ func (s *MarketplaceServer) ListListings(ctx context.Context, req *pb.ListListin
             CreatedAt:   l.CreatedAt.Unix(),
         })
     }
-
     return &pb.ListListingsResponse{Listings: pbListings, Total: int32(total)}, nil
 }
 
-// ListUserListings lists listings created by a user
+// ListUserListings - List user's listings
 func (s *MarketplaceServer) ListUserListings(ctx context.Context, req *pb.ListUserListingsRequest) (*pb.ListListingsResponse, error) {
     var listings []Listing
     query := s.DB.Where("seller_id = ?", req.UserId).Order("created_at DESC")
-
     offset := (req.Page - 1) * req.PageSize
-    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&listings).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list user listings")
-    }
+    query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&listings)
 
     var total int64
     s.DB.Model(&Listing{}).Where("seller_id = ?", req.UserId).Count(&total)
@@ -209,48 +180,37 @@ func (s *MarketplaceServer) ListUserListings(ctx context.Context, req *pb.ListUs
             CreatedAt:   l.CreatedAt.Unix(),
         })
     }
-
     return &pb.ListListingsResponse{Listings: pbListings, Total: int32(total)}, nil
 }
 
-// UpdateListingStatus updates listing status (sold, rented, cancelled)
+// UpdateListingStatus - Update listing status
 func (s *MarketplaceServer) UpdateListingStatus(ctx context.Context, req *pb.UpdateListingStatusRequest) (*pb.Empty, error) {
     var listing Listing
     if err := s.DB.Where("id = ? AND seller_id = ?", req.ListingId, req.UserId).First(&listing).Error; err != nil {
         return nil, status.Error(codes.NotFound, "listing not found")
     }
-
     listing.Status = req.Status
     listing.UpdatedAt = time.Now()
-
-    if err := s.DB.Save(&listing).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update listing status")
-    }
-
+    s.DB.Save(&listing)
     return &pb.Empty{}, nil
 }
 
-// DeleteListing deletes a listing (soft delete for GDPR)
+// DeleteListing - Delete listing
 func (s *MarketplaceServer) DeleteListing(ctx context.Context, req *pb.DeleteListingRequest) (*pb.Empty, error) {
     var listing Listing
     if err := s.DB.Where("id = ? AND seller_id = ?", req.ListingId, req.UserId).First(&listing).Error; err != nil {
         return nil, status.Error(codes.NotFound, "listing not found")
     }
-
-    if err := s.DB.Delete(&listing).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to delete listing")
-    }
-
+    s.DB.Delete(&listing)
     return &pb.Empty{}, nil
 }
 
-// CreateTransaction creates a transaction when an item is bought/rented
+// CreateTransaction - Create transaction
 func (s *MarketplaceServer) CreateTransaction(ctx context.Context, req *pb.CreateTransactionRequest) (*pb.TransactionResponse, error) {
     var listing Listing
     if err := s.DB.Where("id = ? AND status = ?", req.ListingId, "active").First(&listing).Error; err != nil {
-        return nil, status.Error(codes.NotFound, "listing not found or not active")
+        return nil, status.Error(codes.NotFound, "listing not found")
     }
-
     if listing.SellerID == req.BuyerId {
         return nil, status.Error(codes.InvalidArgument, "cannot buy your own listing")
     }
@@ -264,18 +224,13 @@ func (s *MarketplaceServer) CreateTransaction(ctx context.Context, req *pb.Creat
         Status:    "pending",
         CreatedAt: time.Now(),
     }
-
     if req.RentalStart > 0 {
         start := time.Unix(req.RentalStart, 0)
         end := time.Unix(req.RentalEnd, 0)
         tx.RentalStart = &start
         tx.RentalEnd = &end
     }
-
-    if err := s.DB.Create(tx).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create transaction")
-    }
-
+    s.DB.Create(tx)
     return &pb.TransactionResponse{
         Id:        tx.ID,
         ListingId: tx.ListingID,
@@ -287,39 +242,33 @@ func (s *MarketplaceServer) CreateTransaction(ctx context.Context, req *pb.Creat
     }, nil
 }
 
-// CompleteTransaction marks a transaction as completed
+// CompleteTransaction - Complete transaction
 func (s *MarketplaceServer) CompleteTransaction(ctx context.Context, req *pb.CompleteTransactionRequest) (*pb.Empty, error) {
     var tx MarketplaceTransaction
     if err := s.DB.Where("id = ?", req.TransactionId).First(&tx).Error; err != nil {
         return nil, status.Error(codes.NotFound, "transaction not found")
     }
-
     now := time.Now()
     tx.Status = "completed"
     tx.CompletedAt = &now
+    s.DB.Save(&tx)
 
-    if err := s.DB.Save(&tx).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to complete transaction")
-    }
-
-    // Update listing status
     s.DB.Model(&Listing{}).Where("id = ?", tx.ListingID).Updates(map[string]interface{}{
         "status":     "sold",
         "updated_at": now,
     })
-
     return &pb.Empty{}, nil
 }
 
-// GetUserTransactions lists transactions for a user (as buyer or seller)
+// GetUserTransactions - Get user transactions
 func (s *MarketplaceServer) GetUserTransactions(ctx context.Context, req *pb.GetUserTransactionsRequest) (*pb.TransactionsResponse, error) {
     var transactions []MarketplaceTransaction
     query := s.DB.Where("buyer_id = ? OR seller_id = ?", req.UserId, req.UserId).Order("created_at DESC")
-
     offset := (req.Page - 1) * req.PageSize
-    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&transactions).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get transactions")
-    }
+    query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&transactions)
+
+    var total int64
+    s.DB.Model(&MarketplaceTransaction{}).Where("buyer_id = ? OR seller_id = ?", req.UserId, req.UserId).Count(&total)
 
     var pbTransactions []*pb.TransactionResponse
     for _, t := range transactions {
@@ -333,10 +282,6 @@ func (s *MarketplaceServer) GetUserTransactions(ctx context.Context, req *pb.Get
             CreatedAt: t.CreatedAt.Unix(),
         })
     }
-
-    var total int64
-    s.DB.Model(&MarketplaceTransaction{}).Where("buyer_id = ? OR seller_id = ?", req.UserId, req.UserId).Count(&total)
-
     return &pb.TransactionsResponse{Transactions: pbTransactions, Total: int32(total)}, nil
 }
 
@@ -387,5 +332,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Marketplace Service stopped")
 }
