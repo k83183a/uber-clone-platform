@@ -1,11 +1,89 @@
 syntax = "proto3";
+
 package safety;
 option go_package = "github.com/uber-clone/safety-service/proto";
+
 service SafetyService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ReportSOS(SOSRequest) returns (SOSResponse);
+    rpc CreateLiveSharingLink(LiveSharingRequest) returns (LiveSharingResponse);
+    rpc VerifyDriverSelfie(SelfieRequest) returns (SelfieResponse);
+    rpc StartAudioRecording(StartRecordingRequest) returns (StartRecordingResponse);
+    rpc StopAudioRecording(StopRecordingRequest) returns (StopRecordingResponse);
+    rpc GetActiveSOSAlerts(Empty) returns (SOSAlertsResponse);
+    rpc ResolveSOSAlert(ResolveSOSRequest) returns (Empty);
 }
+
+message SOSRequest {
+    string ride_id = 1;
+    string user_id = 2;
+    double latitude = 3;
+    double longitude = 4;
+}
+
+message SOSResponse {
+    string alert_id = 1;
+    string message = 2;
+}
+
+message LiveSharingRequest {
+    string ride_id = 1;
+    int32 expiry_minutes = 2;
+}
+
+message LiveSharingResponse {
+    string share_url = 1;
+    int64 expires_at = 2;
+}
+
+message SelfieRequest {
+    string driver_id = 1;
+    string ride_id = 2;
+    bytes image_data = 3;
+}
+
+message SelfieResponse {
+    bool matched = 1;
+    string message = 2;
+}
+
+message StartRecordingRequest {
+    string ride_id = 1;
+    string user_id = 2;
+}
+
+message StartRecordingResponse {
+    string recording_id = 1;
+    string message = 2;
+}
+
+message StopRecordingRequest {
+    string recording_id = 1;
+    string ride_id = 2;
+    string user_id = 3;
+    int32 duration_sec = 4;
+}
+
+message StopRecordingResponse {
+    string recording_url = 1;
+    string message = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message SOSAlertInfo {
+    string alert_id = 1;
+    string ride_id = 2;
+    string user_id = 3;
+    double latitude = 4;
+    double longitude = 5;
+    int64 alert_time = 6;
+}
+
+message SOSAlertsResponse {
+    repeated SOSAlertInfo alerts = 1;
+}
+
+message ResolveSOSRequest {
+    string alert_id = 1;
+    string notes = 2;
 }
