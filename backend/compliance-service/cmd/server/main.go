@@ -1,53 +1,351 @@
 package main
 
 import (
-  "context"
-  "log"
-  "net"
-  "os"
-  "os/signal"
-  "syscall"
-  "time"
-  "github.com/joho/godotenv"
-  "google.golang.org/grpc"
-  "gorm.io/driver/postgres"
-  "gorm.io/gorm"
-  pb "github.com/uber-clone/compliance-service/proto"
+    "context"
+    "encoding/json"
+    "log"
+    "net"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "github.com/joho/godotenv"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/codes"
+    "google.golang.org/grpc/status"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+
+    pb "github.com/uber-clone/compliance-service/proto"
 )
 
-type ServiceServer struct {
-  pb.UnimplementedComplianceServiceServer
-  DB *gorm.DB
+// DBCheck represents a DBS (Disclosure and Barring Service) check
+type DBCheck struct {
+    ID               string    `gorm:"primaryKey"`
+    DriverID         string    `gorm:"index;not null"`
+    FullName         string    `gorm:"not null"`
+    DateOfBirth      string    `gorm:"not null"`
+    Address          string    `gorm:"not null"`
+    ConsentToken     string    `gorm:"not null"`
+    ExternalReference string   `gorm:"index"`
+    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
+    CertificateURL   string
+    ResultData       string    `gorm:"type:text"` // JSON
+    RequestedAt      time.Time
+    CompletedAt      *time.Time
+    CreatedAt        time.Time
+    UpdatedAt        time.Time
 }
 
-func (s *ServiceServer) Health(ctx context.Context, req *pb.Empty) (*pb.HealthResponse, error) {
-  return &pb.HealthResponse{Status: "healthy", Timestamp: time.Now().Unix()}, nil
+// DVLACheck represents a DVLA driver licence check
+type DVLACheck struct {
+    ID               string    `gorm:"primaryKey"`
+    DriverID         string    `gorm:"index;not null"`
+    LicenceNumber    string    `gorm:"not null"`
+    Postcode         string    `gorm:"not null"`
+    ExternalReference string   `gorm:"index"`
+    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
+    LicenceValid     bool
+    Entitlements     string    `gorm:"type:text"` // JSON array
+    PenaltyPoints    int
+    ExpiryDate       *time.Time
+    ResultData       string    `gorm:"type:text"` // JSON
+    RequestedAt      time.Time
+    CompletedAt      *time.Time
+    CreatedAt        time.Time
+    UpdatedAt        time.Time
+}
+
+// RightToWorkCheck represents a right-to-work verification
+type RightToWorkCheck struct {
+    ID               string    `gorm:"primaryKey"`
+    DriverID         string    `gorm:"index;not null"`
+    PassportNumber   string
+    ShareCode        string    `gorm:"not null"`
+    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
+    ResultData       string    `gorm:"type:text"` // JSON
+    RequestedAt      time.Time
+    CompletedAt      *time.Time
+    CreatedAt        time.Time
+    UpdatedAt        time.Time
+}
+
+// ComplianceServer handles gRPC requests
+type ComplianceServer struct {
+    pb.UnimplementedComplianceServiceServer
+    DB *gorm.DB
+}
+
+// TriggerDBCheck initiates a DBS check
+func (s *ComplianceServer) TriggerDBCheck(ctx context.Context, req *pb.DBCheckRequest) (*pb.CheckResponse, error) {
+    check := &DBCheck{
+        ID:           generateID(),
+        DriverID:     req.DriverId,
+        FullName:     req.FullName,
+        DateOfBirth:  req.DateOfBirth,
+        Address:      req.Address,
+        ConsentToken: req.ConsentToken,
+        Status:       "pending",
+        RequestedAt:  time.Now(),
+        CreatedAt:    time.Now(),
+        UpdatedAt:    time.Now(),
+    }
+
+    if err := s.DB.Create(check).Error; err != nil {
+        return nil, status.Error(codes.Internal, "failed to create DBS check")
+    }
+
+    // In production: call external DBS API via a registered umbrella body
+    // For MVP: simulate async check completion
+    go s.simulateDBCheck(check.ID)
+
+    return &pb.CheckResponse{
+        CheckId: check.ID,
+        Status:  check.Status,
+        Message: "DBS check initiated. Results will be available in 24-48 hours.",
+    }, nil
+}
+
+// TriggerDVLACheck initiates a DVLA driver licence check
+func (s *ComplianceServer) TriggerDVLACheck(ctx context.Context, req *pb.DVLACheckRequest) (*pb.CheckResponse, error) {
+    check := &DVLACheck{
+        ID:            generateID(),
+        DriverID:      req.DriverId,
+        LicenceNumber: req.LicenceNumber,
+        Postcode:      req.Postcode,
+        Status:        "pending",
+        RequestedAt:   time.Now(),
+        CreatedAt:     time.Now(),
+        UpdatedAt:     time.Now(),
+    }
+
+    if err := s.DB.Create(check).Error; err != nil {
+        return nil, status.Error(codes.Internal, "failed to create DVLA check")
+    }
+
+    // In production: call DVLA API
+    go s.simulateDVLACheck(check.ID)
+
+    return &pb.CheckResponse{
+        CheckId: check.ID,
+        Status:  check.Status,
+        Message: "DVLA check initiated.",
+    }, nil
+}
+
+// TriggerRightToWorkCheck initiates a right-to-work check
+func (s *ComplianceServer) TriggerRightToWorkCheck(ctx context.Context, req *pb.RightToWorkCheckRequest) (*pb.CheckResponse, error) {
+    check := &RightToWorkCheck{
+        ID:           generateID(),
+        DriverID:     req.DriverId,
+        PassportNumber: req.PassportNumber,
+        ShareCode:    req.ShareCode,
+        Status:       "pending",
+        RequestedAt:  time.Now(),
+        CreatedAt:    time.Now(),
+        UpdatedAt:    time.Now(),
+    }
+
+    if err := s.DB.Create(check).Error; err != nil {
+        return nil, status.Error(codes.Internal, "failed to create right-to-work check")
+    }
+
+    // In production: call UK Home Office API
+    go s.simulateRightToWorkCheck(check.ID)
+
+    return &pb.CheckResponse{
+        CheckId: check.ID,
+        Status:  check.Status,
+        Message: "Right-to-work check initiated.",
+    }, nil
+}
+
+// GetCheckStatus returns the status of a compliance check
+func (s *ComplianceServer) GetCheckStatus(ctx context.Context, req *pb.GetCheckStatusRequest) (*pb.CheckStatusResponse, error) {
+    switch req.CheckType {
+    case "dbs":
+        var check DBCheck
+        if err := s.DB.Where("id = ?", req.CheckId).First(&check).Error; err != nil {
+            return nil, status.Error(codes.NotFound, "check not found")
+        }
+        return &pb.CheckStatusResponse{
+            Status:      check.Status,
+            CompletedAt: check.CompletedAt.Unix(),
+            ResultData:  check.ResultData,
+        }, nil
+
+    case "dvla":
+        var check DVLACheck
+        if err := s.DB.Where("id = ?", req.CheckId).First(&check).Error; err != nil {
+            return nil, status.Error(codes.NotFound, "check not found")
+        }
+        result := make(map[string]interface{})
+        json.Unmarshal([]byte(check.ResultData), &result)
+        return &pb.CheckStatusResponse{
+            Status:      check.Status,
+            CompletedAt: check.CompletedAt.Unix(),
+            ResultData:  check.ResultData,
+        }, nil
+
+    case "right_to_work":
+        var check RightToWorkCheck
+        if err := s.DB.Where("id = ?", req.CheckId).First(&check).Error; err != nil {
+            return nil, status.Error(codes.NotFound, "check not found")
+        }
+        return &pb.CheckStatusResponse{
+            Status:      check.Status,
+            CompletedAt: check.CompletedAt.Unix(),
+            ResultData:  check.ResultData,
+        }, nil
+
+    default:
+        return nil, status.Error(codes.InvalidArgument, "invalid check type")
+    }
+}
+
+// GetDriverComplianceStatus returns overall compliance status for a driver
+func (s *ComplianceServer) GetDriverComplianceStatus(ctx context.Context, req *pb.GetDriverComplianceStatusRequest) (*pb.DriverComplianceStatusResponse, error) {
+    var dbsCheck DBCheck
+    var dvlaCheck DVLACheck
+    var rtwCheck RightToWorkCheck
+
+    s.DB.Where("driver_id = ?", req.DriverId).Order("created_at DESC").First(&dbsCheck)
+    s.DB.Where("driver_id = ?", req.DriverId).Order("created_at DESC").First(&dvlaCheck)
+    s.DB.Where("driver_id = ?", req.DriverId).Order("created_at DESC").First(&rtwCheck)
+
+    dbsStatus := "not_started"
+    if dbsCheck.ID != "" {
+        dbsStatus = dbsCheck.Status
+    }
+    dvlaStatus := "not_started"
+    if dvlaCheck.ID != "" {
+        dvlaStatus = dvlaCheck.Status
+    }
+    rtwStatus := "not_started"
+    if rtwCheck.ID != "" {
+        rtwStatus = rtwCheck.Status
+    }
+
+    allPassed := dbsStatus == "passed" && dvlaStatus == "passed" && rtwStatus == "passed"
+
+    return &pb.DriverComplianceStatusResponse{
+        DbsStatus:     dbsStatus,
+        DvlaStatus:    dvlaStatus,
+        RightToWorkStatus: rtwStatus,
+        AllPassed:     allPassed,
+    }, nil
+}
+
+// Simulate DBS check completion (for MVP)
+func (s *ComplianceServer) simulateDBCheck(checkID string) {
+    time.Sleep(5 * time.Second) // Simulate API call delay
+
+    var check DBCheck
+    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
+        return
+    }
+
+    // Simulate random result (80% pass rate for demo)
+    passed := time.Now().UnixNano()%10 < 8
+    status := "passed"
+    if !passed {
+        status = "failed"
+    }
+
+    now := time.Now()
+    check.Status = status
+    check.CompletedAt = &now
+    check.ResultData = `{"certificate_issued":` + map[bool]string{true: "true", false: "false"}[passed] + `}`
+
+    s.DB.Save(&check)
+    log.Printf("DBS check %s completed with status: %s", checkID, status)
+}
+
+// Simulate DVLA check completion
+func (s *ComplianceServer) simulateDVLACheck(checkID string) {
+    time.Sleep(3 * time.Second)
+
+    var check DVLACheck
+    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
+        return
+    }
+
+    now := time.Now()
+    check.Status = "passed"
+    check.LicenceValid = true
+    check.PenaltyPoints = 0
+    check.CompletedAt = &now
+    check.ResultData = `{"licence_valid":true,"penalty_points":0}`
+
+    s.DB.Save(&check)
+    log.Printf("DVLA check %s completed", checkID)
+}
+
+// Simulate right-to-work check completion
+func (s *ComplianceServer) simulateRightToWorkCheck(checkID string) {
+    time.Sleep(4 * time.Second)
+
+    var check RightToWorkCheck
+    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
+        return
+    }
+
+    now := time.Now()
+    check.Status = "passed"
+    check.CompletedAt = &now
+    check.ResultData = `{"right_to_work":true,"share_code_valid":true}`
+
+    s.DB.Save(&check)
+    log.Printf("Right-to-work check %s completed", checkID)
+}
+
+func generateID() string {
+    return "cmp_" + time.Now().Format("20060102150405") + "_" + randomString(6)
+}
+
+func randomString(n int) string {
+    const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
+    b := make([]byte, n)
+    for i := range b {
+        b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+    }
+    return string(b)
 }
 
 func main() {
-  godotenv.Load()
-  dsn := os.Getenv("DB_DSN")
-  if dsn == "" {
-    dsn = "host=postgres user=postgres password=postgres dbname=compliancedb port=5432 sslmode=disable"
-  }
-  db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
-  if err != nil {
-    log.Fatal("Failed to connect to database:", err)
-  }
-  grpcServer := grpc.NewServer()
-  pb.RegisterComplianceServiceServer(grpcServer, &ServiceServer{DB: db})
-  lis, err := net.Listen("tcp", ":50074")
-  if err != nil {
-    log.Fatal("Failed to listen:", err)
-  }
-  go func() {
-    log.Println("✅ Compliance Service running on port 50074")
-    if err := grpcServer.Serve(lis); err != nil {
-      log.Fatal("Failed to serve:", err)
+    godotenv.Load()
+
+    dsn := os.Getenv("DB_DSN")
+    if dsn == "" {
+        dsn = "host=postgres user=postgres password=postgres dbname=compliancedb port=5432 sslmode=disable"
     }
-  }()
-  quit := make(chan os.Signal, 1)
-  signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-  <-quit
-  grpcServer.GracefulStop()
+
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatal("Failed to connect to database:", err)
+    }
+
+    db.AutoMigrate(&DBCheck{}, &DVLACheck{}, &RightToWorkCheck{})
+
+    grpcServer := grpc.NewServer()
+    pb.RegisterComplianceServiceServer(grpcServer, &ComplianceServer{DB: db})
+
+    lis, err := net.Listen("tcp", ":50075")
+    if err != nil {
+        log.Fatal("Failed to listen:", err)
+    }
+
+    go func() {
+        log.Println("✅ Compliance Service running on port 50075")
+        if err := grpcServer.Serve(lis); err != nil {
+            log.Fatal("Failed to serve:", err)
+        }
+    }()
+
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+    grpcServer.GracefulStop()
+    log.Println("Compliance Service stopped")
 }
