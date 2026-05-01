@@ -5,25 +5,24 @@ option go_package = "github.com/uber-clone/food-service/proto";
 
 service FoodService {
     rpc ListRestaurants(ListRestaurantsRequest) returns (ListRestaurantsResponse);
-    rpc GetRestaurant(GetRestaurantRequest) returns (Restaurant);
-    rpc GetMenu(GetMenuRequest) returns (GetMenuResponse);
+    rpc GetRestaurant(GetRestaurantRequest) returns (RestaurantDetail);
+    rpc GetCategories(GetCategoriesRequest) returns (CategoriesResponse);
+    rpc GetMenu(GetMenuRequest) returns (MenuResponse);
     rpc PlaceOrder(PlaceOrderRequest) returns (OrderResponse);
     rpc GetOrder(GetOrderRequest) returns (OrderDetailResponse);
     rpc UpdateOrderStatus(UpdateOrderStatusRequest) returns (Empty);
+    rpc CancelOrder(CancelOrderRequest) returns (Empty);
+    rpc RateOrder(RateOrderRequest) returns (Empty);
     rpc ListUserOrders(ListUserOrdersRequest) returns (ListOrdersResponse);
 }
 
 message ListRestaurantsRequest {
     double latitude = 1;
     double longitude = 2;
-    string query = 3;
-    int32 page = 4;
-    int32 page_size = 5;
-}
-
-message ListRestaurantsResponse {
-    repeated Restaurant restaurants = 1;
-    int32 total = 2;
+    string cuisine = 3;
+    string query = 4;
+    int32 page = 5;
+    int32 page_size = 6;
 }
 
 message Restaurant {
@@ -35,20 +34,39 @@ message Restaurant {
     double longitude = 6;
     string phone = 7;
     string image_url = 8;
-    double rating = 9;
-    double min_order = 10;
-    double delivery_fee = 11;
+    string cuisine_type = 9;
+    double rating = 10;
+    double min_order = 11;
+    double delivery_fee = 12;
+    int32 delivery_time = 13;
 }
 
-message GetRestaurantRequest {
+message RestaurantDetail {
     string id = 1;
+    string name = 2;
+    string description = 3;
+    string address = 4;
+    double latitude = 5;
+    double longitude = 6;
+    string phone = 7;
+    string image_url = 8;
+    string cover_image_url = 9;
+    string cuisine_type = 10;
+    double rating = 11;
+    int32 rating_count = 12;
+    double min_order = 13;
+    double delivery_fee = 14;
+    int32 delivery_time = 15;
+    bool is_open = 16;
 }
 
-message GetMenuRequest {
-    string restaurant_id = 1;
-    string category_id = 2;
-}
+message GetRestaurantRequest { string id = 1; }
 
+message GetCategoriesRequest { string restaurant_id = 1; }
+message Category { string id = 1; string name = 2; string description = 3; }
+message CategoriesResponse { repeated Category categories = 1; }
+
+message GetMenuRequest { string restaurant_id = 1; string category_id = 2; }
 message MenuItem {
     string id = 1;
     string name = 2;
@@ -56,79 +74,56 @@ message MenuItem {
     double price = 4;
     double discount_price = 5;
     string image_url = 6;
-    bool is_available = 7;
-    int32 preparation_time = 8;
+    bool is_vegetarian = 7;
+    bool is_vegan = 8;
+    bool is_spicy = 9;
+    int32 preparation_time = 10;
 }
+message MenuResponse { repeated MenuItem items = 1; }
 
-message GetMenuResponse {
-    repeated MenuItem items = 1;
-}
-
+message OrderLineItem { string menu_item_id = 1; int32 quantity = 2; string special_instructions = 3; }
 message PlaceOrderRequest {
     string user_id = 1;
     string restaurant_id = 2;
     repeated OrderLineItem items = 3;
     string payment_method = 4;
-    string delivery_address = 5;
-    double delivery_lat = 6;
-    double delivery_lng = 7;
-    string delivery_instructions = 8;
+    string promo_code = 5;
+    string delivery_address = 6;
+    double delivery_lat = 7;
+    double delivery_lng = 8;
+    string delivery_instructions = 9;
 }
-
-message OrderLineItem {
-    string menu_item_id = 1;
-    int32 quantity = 2;
-}
-
 message OrderResponse {
     string id = 1;
     string order_number = 2;
     string status = 3;
     double total = 4;
-    string created_at = 5;
+    int32 estimated_time = 5;
+    int64 created_at = 6;
 }
 
+message GetOrderRequest { string order_id = 1; string order_number = 2; }
+message OrderItem { string id = 1; string name = 2; int32 quantity = 3; double unit_price = 4; double subtotal = 5; }
 message OrderDetailResponse {
     string id = 1;
     string order_number = 2;
     string status = 3;
     double subtotal = 4;
     double delivery_fee = 5;
-    double tax = 6;
-    double total = 7;
-    repeated OrderItem items = 8;
-    string delivery_address = 9;
-    string created_at = 10;
+    double service_fee = 6;
+    double tax = 7;
+    double discount = 8;
+    double total = 9;
+    repeated OrderItem items = 10;
+    string delivery_address = 11;
+    int32 estimated_time = 12;
+    int64 created_at = 13;
 }
 
-message OrderItem {
-    string id = 1;
-    string name = 2;
-    int32 quantity = 3;
-    double unit_price = 4;
-    double subtotal = 5;
-}
-
-message GetOrderRequest {
-    string order_id = 1;
-}
-
-message UpdateOrderStatusRequest {
-    string order_id = 1;
-    string status = 2;
-    string driver_id = 3;
-    string reason = 4;
-}
-
-message ListUserOrdersRequest {
-    string user_id = 1;
-    int32 page = 2;
-    int32 page_size = 3;
-}
-
-message ListOrdersResponse {
-    repeated OrderResponse orders = 1;
-    int32 total = 2;
-}
-
+message UpdateOrderStatusRequest { string order_id = 1; string status = 2; string driver_id = 3; string reason = 4; }
+message CancelOrderRequest { string order_id = 1; string user_id = 2; string reason = 3; }
+message RateOrderRequest { string order_id = 1; string user_id = 2; int32 rating = 3; string comment = 4; }
+message ListUserOrdersRequest { string user_id = 1; int32 page = 2; int32 page_size = 3; }
+message OrderSummary { string id = 1; string order_number = 2; string status = 3; double total = 4; int64 created_at = 5; }
+message ListOrdersResponse { repeated OrderSummary orders = 1; int32 total = 2; }
 message Empty {}
