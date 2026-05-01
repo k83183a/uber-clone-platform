@@ -19,14 +19,13 @@ import (
     pb "github.com/uber-clone/qcommerce-service/proto"
 )
 
-// DarkStore represents a dark store (dedicated fulfillment center)
 type DarkStore struct {
     ID              string    `gorm:"primaryKey"`
     Name            string    `gorm:"not null"`
     Address         string    `gorm:"not null"`
     Latitude        float64   `gorm:"not null"`
     Longitude       float64   `gorm:"not null"`
-    DeliveryTimeMin int       `gorm:"default:15"` // promised delivery time
+    DeliveryTimeMin int       `gorm:"default:15"`
     MinOrder        float64   `gorm:"default:0"`
     DeliveryFee     float64   `gorm:"default:0"`
     IsActive        bool      `gorm:"default:true"`
@@ -34,7 +33,6 @@ type DarkStore struct {
     UpdatedAt       time.Time
 }
 
-// Product represents an item in a dark store
 type Product struct {
     ID            string    `gorm:"primaryKey"`
     StoreID       string    `gorm:"index;not null"`
@@ -43,7 +41,7 @@ type Product struct {
     Price         float64   `gorm:"not null"`
     DiscountPrice float64
     Stock         int       `gorm:"not null;default:0"`
-    Unit          string    // kg, g, ml, L, piece
+    Unit          string
     ImageURL      string
     Category      string    `gorm:"index"`
     IsAvailable   bool      `gorm:"default:true"`
@@ -52,32 +50,33 @@ type Product struct {
     UpdatedAt     time.Time
 }
 
-// QCOrder represents an express order
 type QCOrder struct {
-    ID               string     `gorm:"primaryKey"`
-    OrderNumber      string     `gorm:"uniqueIndex"`
-    UserID           string     `gorm:"index;not null"`
-    StoreID          string     `gorm:"index;not null"`
-    Status           string     `gorm:"default:'pending'"` // pending, confirmed, picking, ready, out_for_delivery, delivered, cancelled
-    Subtotal         float64    `gorm:"not null"`
-    DeliveryFee      float64    `gorm:"not null"`
-    Tax              float64    `gorm:"not null"`
-    Total            float64    `gorm:"not null"`
-    PaymentMethod    string
-    DeliveryAddress  string
-    DeliveryLat      float64
-    DeliveryLng      float64
+    ID                   string     `gorm:"primaryKey"`
+    OrderNumber          string     `gorm:"uniqueIndex"`
+    UserID               string     `gorm:"index;not null"`
+    StoreID              string     `gorm:"index;not null"`
+    Status               string     `gorm:"default:'pending'"`
+    Subtotal             float64    `gorm:"not null"`
+    DeliveryFee          float64    `gorm:"not null"`
+    Tax                  float64    `gorm:"not null"`
+    Total                float64    `gorm:"not null"`
+    PaymentMethod        string
+    DeliveryAddress      string
+    DeliveryLat          float64
+    DeliveryLng          float64
     DeliveryInstructions string
-    DriverID         string     `gorm:"index"`
-    EstimatedTime    int        // minutes
-    CreatedAt        time.Time
-    UpdatedAt        time.Time
-    CompletedAt      *time.Time
-    CancelledAt      *time.Time
-    CancelledReason  string
+    DriverID             string     `gorm:"index"`
+    EstimatedTime        int
+    CreatedAt            time.Time
+    ConfirmedAt          *time.Time
+    PickingAt            *time.Time
+    ReadyAt              *time.Time
+    OutForDeliveryAt     *time.Time
+    DeliveredAt          *time.Time
+    CancelledAt          *time.Time
+    CancelledReason      string
 }
 
-// QCOrderItem represents an item in an express order
 type QCOrderItem struct {
     ID          string  `gorm:"primaryKey"`
     OrderID     string  `gorm:"index;not null"`
@@ -89,20 +88,18 @@ type QCOrderItem struct {
     CreatedAt   time.Time
 }
 
-// QCommerceServer handles gRPC requests
 type QCommerceServer struct {
     pb.UnimplementedQCommerceServiceServer
     DB *gorm.DB
 }
 
-// ListStores returns dark stores near a location
+// ListStores - List dark stores near location
 func (s *QCommerceServer) ListStores(ctx context.Context, req *pb.ListStoresRequest) (*pb.ListStoresResponse, error) {
     var stores []DarkStore
     query := s.DB.Where("is_active = ?", true)
 
     if req.Latitude != 0 && req.Longitude != 0 {
-        // In production: use PostGIS for distance-based sorting
-        query = query.Order("latitude")
+        query = query.Order("ABS(latitude - ?) + ABS(longitude - ?)", req.Latitude, req.Longitude)
     }
 
     if err := query.Find(&stores).Error; err != nil {
@@ -126,7 +123,7 @@ func (s *QCommerceServer) ListStores(ctx context.Context, req *pb.ListStoresRequ
     return &pb.ListStoresResponse{Stores: pbStores}, nil
 }
 
-// ListProducts returns products available in a dark store
+// ListProducts - List products in a store
 func (s *QCommerceServer) ListProducts(ctx context.Context, req *pb.ListProductsRequest) (*pb.ListProductsResponse, error) {
     var products []Product
     query := s.DB.Where("store_id = ? AND is_available = ? AND stock > ?", req.StoreId, true, 0)
@@ -134,7 +131,6 @@ func (s *QCommerceServer) ListProducts(ctx context.Context, req *pb.ListProducts
     if req.Category != "" {
         query = query.Where("category = ?", req.Category)
     }
-
     if req.Query != "" {
         query = query.Where("name ILIKE ?", "%"+req.Query+"%")
     }
@@ -165,14 +161,13 @@ func (s *QCommerceServer) ListProducts(ctx context.Context, req *pb.ListProducts
     return &pb.ListProductsResponse{Products: pbProducts, Total: int32(total)}, nil
 }
 
-// PlaceOrder creates a new express order
+// PlaceOrder - Create express order
 func (s *QCommerceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (*pb.OrderResponse, error) {
     var store DarkStore
     if err := s.DB.Where("id = ?", req.StoreId).First(&store).Error; err != nil {
         return nil, status.Error(codes.NotFound, "store not found")
     }
 
-    // Calculate totals and check stock
     var subtotal float64
     var orderItems []QCOrderItem
 
@@ -181,12 +176,19 @@ func (s *QCommerceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequ
         if err := s.DB.Where("id = ?", item.ProductId).First(&product).Error; err != nil {
             return nil, status.Error(codes.NotFound, "product not found")
         }
-
         if product.Stock < int(item.Quantity) {
             return nil, status.Error(codes.ResourceExhausted, "insufficient stock for product: "+product.Name)
         }
 
-        itemTotal := product.Price * float64(item.Quantity)
+        product.Stock -= int(item.Quantity)
+        s.DB.Save(&product)
+
+        price := product.Price
+        if product.DiscountPrice > 0 && product.DiscountPrice < price {
+            price = product.DiscountPrice
+        }
+
+        itemTotal := price * float64(item.Quantity)
         subtotal += itemTotal
 
         orderItems = append(orderItems, QCOrderItem{
@@ -194,17 +196,13 @@ func (s *QCommerceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequ
             ProductID: product.ID,
             Name:      product.Name,
             Quantity:  int(item.Quantity),
-            UnitPrice: product.Price,
+            UnitPrice: price,
             Subtotal:  itemTotal,
             CreatedAt: time.Now(),
         })
-
-        // Reserve stock
-        product.Stock -= int(item.Quantity)
-        s.DB.Save(&product)
     }
 
-    tax := subtotal * 0.20 // 20% VAT
+    tax := subtotal * 0.20
     total := subtotal + store.DeliveryFee + tax
 
     order := &QCOrder{
@@ -224,10 +222,8 @@ func (s *QCommerceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequ
         DeliveryInstructions: req.DeliveryInstructions,
         EstimatedTime:    store.DeliveryTimeMin,
         CreatedAt:        time.Now(),
-        UpdatedAt:        time.Now(),
     }
 
-    // Create order in transaction
     err := s.DB.Transaction(func(tx *gorm.DB) error {
         if err := tx.Create(order).Error; err != nil {
             return err
@@ -250,11 +246,12 @@ func (s *QCommerceServer) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequ
         OrderNumber: order.OrderNumber,
         Status:     order.Status,
         Total:      order.Total,
-        CreatedAt:  order.CreatedAt.String(),
+        EstimatedTime: int32(order.EstimatedTime),
+        CreatedAt:  order.CreatedAt.Unix(),
     }, nil
 }
 
-// GetOrder returns order details
+// GetOrder - Get order details
 func (s *QCommerceServer) GetOrder(ctx context.Context, req *pb.GetOrderRequest) (*pb.OrderDetailResponse, error) {
     var order QCOrder
     if err := s.DB.Where("id = ?", req.OrderId).First(&order).Error; err != nil {
@@ -285,43 +282,48 @@ func (s *QCommerceServer) GetOrder(ctx context.Context, req *pb.GetOrderRequest)
         Total:       order.Total,
         Items:       pbItems,
         DeliveryAddress: order.DeliveryAddress,
-        CreatedAt:   order.CreatedAt.String(),
+        EstimatedTime: int32(order.EstimatedTime),
+        CreatedAt:   order.CreatedAt.Unix(),
     }, nil
 }
 
-// UpdateOrderStatus updates order status
+// UpdateOrderStatus - Update order status
 func (s *QCommerceServer) UpdateOrderStatus(ctx context.Context, req *pb.UpdateOrderStatusRequest) (*pb.Empty, error) {
     var order QCOrder
     if err := s.DB.Where("id = ?", req.OrderId).First(&order).Error; err != nil {
         return nil, status.Error(codes.NotFound, "order not found")
     }
 
-    updates := map[string]interface{}{
-        "status":     req.Status,
-        "updated_at": time.Now(),
-    }
+    now := time.Now()
+    updates := map[string]interface{}{"status": req.Status}
 
-    if req.Status == "delivered" {
-        now := time.Now()
-        updates["completed_at"] = now
-    } else if req.Status == "cancelled" {
-        now := time.Now()
+    switch req.Status {
+    case "confirmed":
+        updates["confirmed_at"] = now
+    case "picking":
+        updates["picking_at"] = now
+    case "ready":
+        updates["ready_at"] = now
+    case "out_for_delivery":
+        updates["out_for_delivery_at"] = now
+        if req.DriverId != "" {
+            updates["driver_id"] = req.DriverId
+        }
+    case "delivered":
+        updates["delivered_at"] = now
+    case "cancelled":
         updates["cancelled_at"] = now
         updates["cancelled_reason"] = req.Reason
     }
 
-    if req.DriverId != "" {
-        updates["driver_id"] = req.DriverId
-    }
-
     if err := s.DB.Model(&order).Updates(updates).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update order status")
+        return nil, status.Error(codes.Internal, "failed to update status")
     }
 
     return &pb.Empty{}, nil
 }
 
-// ListUserOrders lists orders for a user
+// ListUserOrders - List orders for user
 func (s *QCommerceServer) ListUserOrders(ctx context.Context, req *pb.ListUserOrdersRequest) (*pb.ListOrdersResponse, error) {
     var orders []QCOrder
     query := s.DB.Where("user_id = ?", req.UserId).Order("created_at DESC")
@@ -331,21 +333,24 @@ func (s *QCommerceServer) ListUserOrders(ctx context.Context, req *pb.ListUserOr
         return nil, status.Error(codes.Internal, "failed to list orders")
     }
 
-    var pbOrders []*pb.OrderResponse
+    var total int64
+    s.DB.Model(&QCOrder{}).Where("user_id = ?", req.UserId).Count(&total)
+
+    var pbOrders []*pb.OrderSummary
     for _, o := range orders {
-        pbOrders = append(pbOrders, &pb.OrderResponse{
+        pbOrders = append(pbOrders, &pb.OrderSummary{
             Id:         o.ID,
             OrderNumber: o.OrderNumber,
             Status:     o.Status,
             Total:      o.Total,
-            CreatedAt:  o.CreatedAt.String(),
+            CreatedAt:  o.CreatedAt.Unix(),
         })
     }
 
-    return &pb.ListOrdersResponse{Orders: pbOrders}, nil
+    return &pb.ListOrdersResponse{Orders: pbOrders, Total: int32(total)}, nil
 }
 
-// UpdateStock updates product stock (admin/store manager)
+// UpdateStock - Update product stock (store admin)
 func (s *QCommerceServer) UpdateStock(ctx context.Context, req *pb.UpdateStockRequest) (*pb.Empty, error) {
     var product Product
     if err := s.DB.Where("id = ?", req.ProductId).First(&product).Error; err != nil {
@@ -353,11 +358,12 @@ func (s *QCommerceServer) UpdateStock(ctx context.Context, req *pb.UpdateStockRe
     }
 
     product.Stock = int(req.NewStock)
-    product.UpdatedAt = time.Now()
     product.IsAvailable = req.NewStock > 0
+    product.UpdatedAt = time.Now()
+    s.DB.Save(&product)
 
-    if err := s.DB.Save(&product).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update stock")
+    if product.Stock < 10 {
+        log.Printf("⚠️ Low stock alert: %s has only %d units left", product.Name, product.Stock)
     }
 
     return &pb.Empty{}, nil
@@ -414,7 +420,6 @@ func main() {
         }
         db.Create(store)
 
-        // Seed some products
         products := []Product{
             {ID: generateID(), StoreID: store.ID, Name: "Milk 1L", Price: 1.20, Stock: 100, Unit: "bottle", Category: "Dairy", IsAvailable: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
             {ID: generateID(), StoreID: store.ID, Name: "Bread", Price: 1.50, Stock: 50, Unit: "loaf", Category: "Bakery", IsAvailable: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
@@ -444,5 +449,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Q‑Commerce Service stopped")
 }
