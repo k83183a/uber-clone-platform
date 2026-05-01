@@ -1,11 +1,57 @@
 syntax = "proto3";
+
 package operator;
 option go_package = "github.com/uber-clone/operator-service/proto";
+
 service OperatorService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc GetOperatorForRegion(GetOperatorRequest) returns (OperatorResponse);
+    rpc ListOperators(Empty) returns (OperatorsList);
+    rpc CreateOperator(CreateOperatorRequest) returns (Operator);
+    rpc UpdateOperator(UpdateOperatorRequest) returns (Operator);
+    rpc DeleteOperator(DeleteOperatorRequest) returns (Empty);
 }
+
+message GetOperatorRequest {
+    string region = 1;
+}
+
+message OperatorResponse {
+    string operator_id = 1;
+    string name = 2;
+    string business_model = 3;
+    double commission_percent = 4;
+    repeated string regions = 5;
+}
+
+message Operator {
+    string id = 1;
+    string name = 2;
+    string business_model = 3;
+    repeated string regions = 4;
+    double commission_percent = 5;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message CreateOperatorRequest {
+    string name = 1;
+    string business_model = 2;
+    repeated string regions = 3;
+    double commission_percent = 4;
+}
+
+message UpdateOperatorRequest {
+    string id = 1;
+    string name = 2;
+    string business_model = 3;
+    repeated string regions = 4;
+    double commission_percent = 5;
+}
+
+message DeleteOperatorRequest {
+    string id = 1;
+}
+
+message OperatorsList {
+    repeated Operator operators = 1;
 }
