@@ -1,0 +1,69 @@
+import 'package:dio/dio.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:riverpod/riverpod.dart';
+import '../utils/logger.dart';
+
+final dioProvider = Provider<Dio>((ref) {
+  final dio = Dio(BaseOptions(
+    baseUrl: 'https://api.prosser.com',
+    connectTimeout: const Duration(seconds: 30),
+    receiveTimeout: const Duration(seconds: 30),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+  ));
+  dio.interceptors.add(AuthInterceptor());
+  dio.interceptors.add(LogInterceptor(
+    requestBody: true,
+    responseBody: true,
+    logPrint: (obj) => logger.d(obj.toString()),
+  )));
+  return dio;
+});
+
+class AuthInterceptor extends Interceptor {
+  final storage = const FlutterSecureStorage();
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+    final token = await storage.read(key: 'access_token');
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    handler.next(options);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) async {
+    if (err.response?.statusCode == 401) {
+      final refreshToken = await storage.read(key: 'refresh_token');
+      if (refreshToken != null) {
+        try {
+          final newTokens = await _refreshTokens(refreshToken);
+          await storage.write(key: 'access_token', value: newTokens['access_token']);
+          await storage.write(key: 'refresh_token', value: newTokens['refresh_token']);
+          final opts = err.requestOptions;
+          opts.headers['Authorization'] = 'Bearer ${newTokens['access_token']}';
+          final response = await Dio().fetch(opts);
+          handler.resolve(response);
+          return;
+        } catch (_) {}
+      }
+      await storage.deleteAll();
+    }
+    handler.next(err);
+  }
+
+  Future<Map<String, String>> _refreshTokens(String refreshToken) async {
+    final dio = Dio();
+    final response = await dio.post(
+      'https://api.prosser.com/api/v1/auth/refresh',
+      data: {'refresh_token': refreshToken},
+    );
+    return {
+      'access_token': response.data['access_token'],
+      'refresh_token': response.data['refresh_token'],
+    };
+  }
+}
