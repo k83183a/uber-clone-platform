@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package reporting;
+option go_package = "github.com/uber-clone/reporting-service/proto";
+
+service ReportingService {
+    rpc GetDailyRides(GetDailyRidesRequest) returns (DailyRidesResponse);
+    rpc GetRevenueReport(GetRevenueReportRequest) returns (RevenueReportResponse);
+    rpc GetDriverPerformance(GetDriverPerformanceRequest) returns (DriverPerformanceResponse);
+    rpc GetUserActivity(GetUserActivityRequest) returns (UserActivityResponse);
+    rpc GetOnboardingFunnel(GetOnboardingFunnelRequest) returns (OnboardingFunnelResponse);
+    rpc ExportReportCSV(ExportReportCSVRequest) returns (CSVResponse);
+    rpc CreateReportJob(CreateReportJobRequest) returns (ReportJobResponse);
+    rpc ListReportJobs(ListReportJobsRequest) returns (ListReportJobsResponse);
+    rpc UpdateReportJob(UpdateReportJobRequest) returns (ReportJobResponse);
+    rpc DeleteReportJob(DeleteReportJobRequest) returns (Empty);
+    rpc TriggerReportNow(TriggerReportNowRequest) returns (TriggerReportResponse);
+    rpc GetDashboardKPI(GetDashboardKPIRequest) returns (DashboardKPIResponse);
+}
+
+message GetDailyRidesRequest {
+    int64 start_date = 1;
+    int64 end_date = 2;
+}
+
+message DailyRideData {
+    string date = 1;
+    int32 total_rides = 2;
+    int32 completed_rides = 3;
+    int32 cancelled_rides = 4;
+    double average_fare = 5;
+}
+
+message DailyRidesResponse {
+    repeated DailyRideData daily_data = 1;
+}
+
+message GetRevenueReportRequest {
+    int64 start_date = 1;
+    int64 end_date = 2;
+}
+
+message DailyRevenue {
+    string date = 1;
+    double amount = 2;
+}
+
+message RevenueReportResponse {
+    repeated DailyRevenue daily_revenue = 1;
+    double total_revenue = 2;
+}
+
+message GetDriverPerformanceRequest {
+    int64 start_date = 1;
+    int64 end_date = 2;
+    string driver_id = 3;
+}
+
+message DriverPerformanceData {
+    string driver_id = 1;
+    string driver_name = 2;
+    int32 total_trips = 3;
+    double total_earnings = 4;
+    double average_rating = 5;
+    double acceptance_rate = 6;
+    double cancellation_rate = 7;
+    double online_hours = 8;
+}
+
+message DriverPerformanceResponse {
+    repeated DriverPerformanceData drivers = 1;
+}
+
+message GetUserActivityRequest {
+    int64 start_date = 1;
+    int64 end_date = 2;
+}
+
+message DailyActivity {
+    string date = 1;
+    int32 new_users = 2;
+    int32 active_users = 3;
+    int32 new_drivers = 4;
+    int32 active_drivers = 5;
+}
+
+message UserActivityResponse {
+    repeated DailyActivity daily_activity = 1;
+}
+
+message GetOnboardingFunnelRequest {
+    int64 start_date = 1;
+    int64 end_date = 2;
+}
+
+message FunnelStage {
+    string stage_name = 1;
+    int32 count = 2;
+}
+
+message OnboardingFunnelResponse {
+    repeated FunnelStage stages = 1;
+    double conversion_rate = 2;
+    double average_days_to_activate = 3;
+}
+
+message ExportReportCSVRequest {
+    string report_type = 1;
+    int64 start_date = 2;
+    int64 end_date = 3;
+}
+
+message CSVResponse {
+    bytes csv_data = 1;
+    string file_name = 2;
+}
+
+message CreateReportJobRequest {
+    string name = 1;
+    string report_type = 2;
+    string frequency = 3;
+    string recipients = 4;
+    string format = 5;
+}
+
+message ReportJobResponse {
+    string id = 1;
+    string name = 2;
+    string report_type = 3;
+    string frequency = 4;
+    bool is_active = 5;
+    int64 next_run_at = 6;
+}
+
+message ListReportJobsRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+}
+
+message ListReportJobsResponse {
+    repeated ReportJobResponse jobs = 1;
+    int32 total = 2;
+}
+
+message UpdateReportJobRequest {
+    string job_id = 1;
+    string name = 2;
+    string frequency = 3;
+    string recipients = 4;
+    bool is_active = 5;
+}
+
+message DeleteReportJobRequest {
+    string job_id = 1;
+}
+
+message TriggerReportNowRequest {
+    string job_id = 1;
+}
+
+message TriggerReportResponse {
+    string job_id = 1;
+    string status = 2;
+    string message = 3;
+}
+
+message GetDashboardKPIRequest {
+    string period = 1;
+}
+
+message DashboardKPIResponse {
+    double total_revenue = 1;
+    int32 total_rides = 2;
+    int32 total_users = 3;
+    int32 total_drivers = 4;
+    double avg_rating = 5;
+    double ride_completion_rate = 6;
+    int32 active_drivers = 7;
+    int32 pending_drivers = 8;
+}
+
+message Empty {}
