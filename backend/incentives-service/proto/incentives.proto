@@ -1,11 +1,82 @@
 syntax = "proto3";
+
 package incentives;
 option go_package = "github.com/uber-clone/incentives-service/proto";
+
 service IncentivesService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ListActiveIncentives(ListActiveIncentivesRequest) returns (ListActiveIncentivesResponse);
+    rpc GetDriverProgress(GetDriverProgressRequest) returns (DriverProgressResponse);
+    rpc CheckAndAwardIncentive(CheckAndAwardRequest) returns (AwardResponse);
+    rpc CreateIncentive(CreateIncentiveRequest) returns (Incentive);
+    rpc UpdateDriverProgress(UpdateProgressRequest) returns (Empty);
 }
+
+message ListActiveIncentivesRequest {
+    string driver_id = 1;
+    string zone = 2;
+    int32 day_of_week = 3;
+    string time_of_day = 4;
+}
+
+message ListActiveIncentivesResponse {
+    repeated Incentive incentives = 1;
+}
+
+message Incentive {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    string incentive_type = 4;
+    string zone = 5;
+    int32 goal_trips = 6;
+    double min_rating = 7;
+    double max_cancel_rate = 8;
+    double bonus_amount = 9;
+}
+
+message GetDriverProgressRequest {
+    string driver_id = 1;
+    string incentive_id = 2;
+}
+
+message DriverProgressResponse {
+    int32 completed_trips = 1;
+    double average_rating = 2;
+    double cancellation_rate = 3;
+    bool is_completed = 4;
+    int64 period_start = 5;
+    int64 period_end = 6;
+}
+
+message CheckAndAwardRequest {
+    string driver_id = 1;
+    string incentive_id = 2;
+}
+
+message AwardResponse {
+    bool awarded = 1;
+    double bonus_amount = 2;
+    string message = 3;
+}
+
+message CreateIncentiveRequest {
+    string name = 1;
+    string description = 2;
+    string incentive_type = 3;
+    string zone = 4;
+    int32 goal_trips = 5;
+    double min_rating = 6;
+    double max_cancel_rate = 7;
+    double bonus_amount = 8;
+    int64 start_date = 9;
+    int64 end_date = 10;
+}
+
+message UpdateProgressRequest {
+    string driver_id = 1;
+    string ride_id = 2;
+    double driver_rating = 3;
+    bool was_cancelled_by_driver = 4;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
