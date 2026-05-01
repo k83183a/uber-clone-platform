@@ -1,11 +1,79 @@
 syntax = "proto3";
+
 package chat;
 option go_package = "github.com/uber-clone/chat-service/proto";
+
 service ChatService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc GetOrCreateConversation(GetOrCreateConversationRequest) returns (ConversationResponse);
+    rpc SendMessage(SendMessageRequest) returns (MessageResponse);
+    rpc GetMessages(GetMessagesRequest) returns (MessagesResponse);
+    rpc MarkAsRead(MarkAsReadRequest) returns (Empty);
+    rpc ListConversations(ListConversationsRequest) returns (ConversationsResponse);
+    rpc DeleteMessage(DeleteMessageRequest) returns (Empty);
 }
+
+message GetOrCreateConversationRequest {
+    string user_id1 = 1;
+    string user_id2 = 2;
+}
+
+message ConversationResponse {
+    string id = 1;
+    string participant1 = 2;
+    string participant2 = 3;
+    string last_message = 4;
+    int64 last_message_at = 5;
+    int32 unread_count = 6;
+}
+
+message SendMessageRequest {
+    string conversation_id = 1;
+    string sender_id = 2;
+    string receiver_id = 3;
+    string message_type = 4;
+    string content = 5;
+    string image_url = 6;
+    double latitude = 7;
+    double longitude = 8;
+}
+
+message MessageResponse {
+    string id = 1;
+    string sender_id = 2;
+    string content = 3;
+    string message_type = 4;
+    string image_url = 5;
+    bool is_read = 6;
+    int64 created_at = 7;
+}
+
+message GetMessagesRequest {
+    string conversation_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message MessagesResponse {
+    repeated MessageResponse messages = 1;
+    int32 total = 2;
+}
+
+message MarkAsReadRequest {
+    string conversation_id = 1;
+    string user_id = 2;
+}
+
+message ListConversationsRequest {
+    string user_id = 1;
+}
+
+message ConversationsResponse {
+    repeated ConversationResponse conversations = 1;
+}
+
+message DeleteMessageRequest {
+    string message_id = 1;
+    string user_id = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
