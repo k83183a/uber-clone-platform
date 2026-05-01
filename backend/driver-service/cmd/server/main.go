@@ -19,72 +19,67 @@ import (
     pb "github.com/uber-clone/driver-service/proto"
 )
 
-// Driver represents a driver in the system
 type Driver struct {
-    ID                string    `gorm:"primaryKey"`
-    UserID            string    `gorm:"uniqueIndex;not null"`
-    FullName          string    `gorm:"not null"`
-    Phone             string    `gorm:"not null"`
-    Email             string
-    DateOfBirth       string
-    Address           string
-    City              string
-    Postcode          string
-    Status            string    `gorm:"default:'pending'"` // pending, approved, suspended, rejected
-    Rating            float64   `gorm:"default:0"`
-    TotalTrips        int       `gorm:"default:0"`
-    TotalEarnings     float64   `gorm:"default:0"`
-    StripeAccountID   string
-    OnlineStatus      bool      `gorm:"default:false"`
-    OnboardingStep    int       `gorm:"default:1"`
-    CreatedAt         time.Time
-    UpdatedAt         time.Time
-    ApprovedAt        *time.Time
-    SuspendedAt       *time.Time
-    SuspensionReason  string
+    ID           string     `gorm:"primaryKey"`
+    UserID       string     `gorm:"uniqueIndex;not null"`
+    FullName     string     `gorm:"not null"`
+    Phone        string     `gorm:"not null"`
+    Email        string
+    DateOfBirth  string
+    Address      string
+    City         string
+    Postcode     string
+    Status       string     `gorm:"default:'pending'"`
+    Rating       float64    `gorm:"default:0"`
+    TotalTrips   int        `gorm:"default:0"`
+    TotalEarnings float64   `gorm:"default:0"`
+    StripeAccountID string
+    OnlineStatus bool       `gorm:"default:false"`
+    OnboardingStep int      `gorm:"default:1"`
+    CreatedAt    time.Time
+    UpdatedAt    time.Time
+    ApprovedAt   *time.Time
+    SuspendedAt  *time.Time
+    SuspensionReason string
 }
 
-// Vehicle represents a driver's vehicle
 type Vehicle struct {
-    ID                 string    `gorm:"primaryKey"`
-    DriverID           string    `gorm:"index;not null"`
-    Make               string    `gorm:"not null"`
-    Model              string    `gorm:"not null"`
-    Year               int
-    Color              string
-    LicensePlate       string    `gorm:"uniqueIndex;not null"`
-    VehicleType        string    `gorm:"default:'standard'"` // standard, ev, premium, pet, accessible
-    IsElectric         bool      `gorm:"default:false"`
-    PetFriendly        bool      `gorm:"default:false"`
-    WheelchairAccessible bool    `gorm:"default:false"`
-    IsActive           bool      `gorm:"default:true"`
-    CreatedAt          time.Time
-    UpdatedAt          time.Time
+    ID                   string    `gorm:"primaryKey"`
+    DriverID             string    `gorm:"index;not null"`
+    Make                 string    `gorm:"not null"`
+    Model                string    `gorm:"not null"`
+    Year                 int
+    Color                string
+    LicensePlate         string    `gorm:"uniqueIndex;not null"`
+    VehicleType          string    `gorm:"default:'standard'"`
+    IsElectric           bool      `gorm:"default:false"`
+    PetFriendly          bool      `gorm:"default:false"`
+    WheelchairAccessible bool      `gorm:"default:false"`
+    IsActive             bool      `gorm:"default:true"`
+    CreatedAt            time.Time
+    UpdatedAt            time.Time
 }
 
-// Document represents a driver's uploaded document
 type DriverDocument struct {
-    ID            string    `gorm:"primaryKey"`
-    DriverID      string    `gorm:"index;not null"`
-    DocumentType  string    `gorm:"not null"` // license_front, license_back, phv_license, proof_address, profile_photo
-    FileURL       string    `gorm:"not null"`
-    Status        string    `gorm:"default:'pending'"` // pending, verified, rejected
+    ID             string     `gorm:"primaryKey"`
+    DriverID       string     `gorm:"index;not null"`
+    DocumentType   string     `gorm:"not null"`
+    FileURL        string     `gorm:"not null"`
+    Status         string     `gorm:"default:'pending'"`
     RejectionReason string
-    VerifiedAt    *time.Time
-    ExpiresAt     *time.Time
-    CreatedAt     time.Time
-    UpdatedAt     time.Time
+    VerifiedAt     *time.Time
+    ExpiresAt      *time.Time
+    CreatedAt      time.Time
+    UpdatedAt      time.Time
 }
 
-// DriverServer handles gRPC requests
 type DriverServer struct {
     pb.UnimplementedDriverServiceServer
     DB *gorm.DB
 }
 
-// CreateDriverProfile creates a new driver profile
+// CreateDriverProfile - Create driver profile
 func (s *DriverServer) CreateDriverProfile(ctx context.Context, req *pb.CreateDriverProfileRequest) (*pb.DriverResponse, error) {
-    // Check if driver already exists
     var existing Driver
     if err := s.DB.Where("user_id = ?", req.UserId).First(&existing).Error; err == nil {
         return nil, status.Error(codes.AlreadyExists, "driver profile already exists")
@@ -105,7 +100,6 @@ func (s *DriverServer) CreateDriverProfile(ctx context.Context, req *pb.CreateDr
         CreatedAt:      time.Now(),
         UpdatedAt:      time.Now(),
     }
-
     if err := s.DB.Create(driver).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create driver profile")
     }
@@ -122,20 +116,15 @@ func (s *DriverServer) CreateDriverProfile(ctx context.Context, req *pb.CreateDr
     }, nil
 }
 
-// GetDriverProfile returns driver details
+// GetDriverProfile - Get driver profile
 func (s *DriverServer) GetDriverProfile(ctx context.Context, req *pb.GetDriverProfileRequest) (*pb.DriverResponse, error) {
     var driver Driver
-    query := s.DB
     if req.DriverId != "" {
-        query = query.Where("id = ?", req.DriverId)
+        s.DB.Where("id = ?", req.DriverId).First(&driver)
     } else if req.UserId != "" {
-        query = query.Where("user_id = ?", req.UserId)
+        s.DB.Where("user_id = ?", req.UserId).First(&driver)
     } else {
         return nil, status.Error(codes.InvalidArgument, "driver_id or user_id required")
-    }
-
-    if err := query.First(&driver).Error; err != nil {
-        return nil, status.Error(codes.NotFound, "driver not found")
     }
 
     return &pb.DriverResponse{
@@ -153,7 +142,7 @@ func (s *DriverServer) GetDriverProfile(ctx context.Context, req *pb.GetDriverPr
     }, nil
 }
 
-// UpdateDriverStatus updates driver status (admin approval)
+// UpdateDriverStatus - Update driver status (admin)
 func (s *DriverServer) UpdateDriverStatus(ctx context.Context, req *pb.UpdateDriverStatusRequest) (*pb.DriverResponse, error) {
     var driver Driver
     if err := s.DB.Where("id = ?", req.DriverId).First(&driver).Error; err != nil {
@@ -162,7 +151,6 @@ func (s *DriverServer) UpdateDriverStatus(ctx context.Context, req *pb.UpdateDri
 
     driver.Status = req.Status
     driver.UpdatedAt = time.Now()
-
     if req.Status == "approved" {
         now := time.Now()
         driver.ApprovedAt = &now
@@ -171,42 +159,29 @@ func (s *DriverServer) UpdateDriverStatus(ctx context.Context, req *pb.UpdateDri
         driver.SuspendedAt = &now
         driver.SuspensionReason = req.SuspensionReason
     }
-
-    if err := s.DB.Save(&driver).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update driver status")
-    }
+    s.DB.Save(&driver)
 
     return s.GetDriverProfile(ctx, &pb.GetDriverProfileRequest{DriverId: driver.ID})
 }
 
-// UpdateOnlineStatus updates driver's online/offline status
+// UpdateOnlineStatus - Update driver online status
 func (s *DriverServer) UpdateOnlineStatus(ctx context.Context, req *pb.UpdateOnlineStatusRequest) (*pb.Empty, error) {
     var driver Driver
     if err := s.DB.Where("id = ?", req.DriverId).First(&driver).Error; err != nil {
         return nil, status.Error(codes.NotFound, "driver not found")
     }
-
     if driver.Status != "approved" {
         return nil, status.Error(codes.FailedPrecondition, "driver not approved")
     }
-
     driver.OnlineStatus = req.Online
     driver.UpdatedAt = time.Now()
-
-    if err := s.DB.Save(&driver).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update online status")
-    }
+    s.DB.Save(&driver)
 
     return &pb.Empty{}, nil
 }
 
-// AddVehicle adds a vehicle to a driver's profile
+// AddVehicle - Add vehicle to driver profile
 func (s *DriverServer) AddVehicle(ctx context.Context, req *pb.AddVehicleRequest) (*pb.VehicleResponse, error) {
-    var driver Driver
-    if err := s.DB.Where("id = ?", req.DriverId).First(&driver).Error; err != nil {
-        return nil, status.Error(codes.NotFound, "driver not found")
-    }
-
     vehicle := &Vehicle{
         ID:                   generateID(),
         DriverID:             req.DriverId,
@@ -223,7 +198,6 @@ func (s *DriverServer) AddVehicle(ctx context.Context, req *pb.AddVehicleRequest
         CreatedAt:            time.Now(),
         UpdatedAt:            time.Now(),
     }
-
     if err := s.DB.Create(vehicle).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to add vehicle")
     }
@@ -243,12 +217,10 @@ func (s *DriverServer) AddVehicle(ctx context.Context, req *pb.AddVehicleRequest
     }, nil
 }
 
-// GetVehicles returns all vehicles for a driver
+// GetVehicles - Get driver's vehicles
 func (s *DriverServer) GetVehicles(ctx context.Context, req *pb.GetVehiclesRequest) (*pb.VehiclesResponse, error) {
     var vehicles []Vehicle
-    if err := s.DB.Where("driver_id = ? AND is_active = ?", req.DriverId, true).Find(&vehicles).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get vehicles")
-    }
+    s.DB.Where("driver_id = ? AND is_active = ?", req.DriverId, true).Find(&vehicles)
 
     var pbVehicles []*pb.VehicleResponse
     for _, v := range vehicles {
@@ -270,7 +242,7 @@ func (s *DriverServer) GetVehicles(ctx context.Context, req *pb.GetVehiclesReque
     return &pb.VehiclesResponse{Vehicles: pbVehicles}, nil
 }
 
-// UploadDocument uploads a driver document
+// UploadDocument - Upload driver document
 func (s *DriverServer) UploadDocument(ctx context.Context, req *pb.UploadDocumentRequest) (*pb.DocumentResponse, error) {
     doc := &DriverDocument{
         ID:           generateID(),
@@ -281,15 +253,11 @@ func (s *DriverServer) UploadDocument(ctx context.Context, req *pb.UploadDocumen
         CreatedAt:    time.Now(),
         UpdatedAt:    time.Now(),
     }
+    s.DB.Create(doc)
 
-    if err := s.DB.Create(doc).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to upload document")
-    }
-
-    // Check if all required documents are uploaded
-    var requiredDocs []string
-    s.DB.Model(&DriverDocument{}).Where("driver_id = ? AND document_type IN (?)", req.DriverId, []string{"license_front", "license_back", "phv_license", "proof_address", "profile_photo"}).Count(&requiredDocs)
-    if len(requiredDocs) >= 5 {
+    var totalDocs int64
+    s.DB.Model(&DriverDocument{}).Where("driver_id = ? AND document_type IN (?)", req.DriverId, []string{"license_front", "license_back", "phv_license"}).Count(&totalDocs)
+    if totalDocs >= 3 {
         s.DB.Model(&Driver{}).Where("id = ?", req.DriverId).Update("onboarding_step", 2)
     }
 
@@ -300,12 +268,10 @@ func (s *DriverServer) UploadDocument(ctx context.Context, req *pb.UploadDocumen
     }, nil
 }
 
-// GetDocuments returns all documents for a driver
+// GetDocuments - Get driver documents
 func (s *DriverServer) GetDocuments(ctx context.Context, req *pb.GetDocumentsRequest) (*pb.DocumentsResponse, error) {
     var docs []DriverDocument
-    if err := s.DB.Where("driver_id = ?", req.DriverId).Find(&docs).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get documents")
-    }
+    s.DB.Where("driver_id = ?", req.DriverId).Find(&docs)
 
     var pbDocs []*pb.DocumentResponse
     for _, d := range docs {
@@ -314,28 +280,16 @@ func (s *DriverServer) GetDocuments(ctx context.Context, req *pb.GetDocumentsReq
             DocumentType: d.DocumentType,
             FileUrl:      d.FileURL,
             Status:       d.Status,
-            RejectionReason: d.RejectionReason,
-            VerifiedAt:   d.VerifiedAt.Unix(),
         })
     }
 
     return &pb.DocumentsResponse{Documents: pbDocs}, nil
 }
 
-// UpdateOnboardingStep updates driver's onboarding progress
-func (s *DriverServer) UpdateOnboardingStep(ctx context.Context, req *pb.UpdateOnboardingStepRequest) (*pb.Empty, error) {
-    if err := s.DB.Model(&Driver{}).Where("id = ?", req.DriverId).Update("onboarding_step", req.Step).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update onboarding step")
-    }
-    return &pb.Empty{}, nil
-}
-
-// ListPendingDrivers returns drivers pending approval (admin)
+// ListPendingDrivers - List drivers pending approval
 func (s *DriverServer) ListPendingDrivers(ctx context.Context, req *pb.ListPendingDriversRequest) (*pb.ListDriversResponse, error) {
     var drivers []Driver
-    if err := s.DB.Where("status = ?", "pending").Find(&drivers).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list pending drivers")
-    }
+    s.DB.Where("status = ?", "pending").Find(&drivers)
 
     var pbDrivers []*pb.DriverResponse
     for _, d := range drivers {
@@ -399,5 +353,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Driver Service stopped")
 }
