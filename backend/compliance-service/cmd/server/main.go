@@ -2,7 +2,6 @@ package main
 
 import (
     "context"
-    "encoding/json"
     "log"
     "net"
     "os"
@@ -20,64 +19,60 @@ import (
     pb "github.com/uber-clone/compliance-service/proto"
 )
 
-// DBCheck represents a DBS (Disclosure and Barring Service) check
 type DBCheck struct {
-    ID               string    `gorm:"primaryKey"`
-    DriverID         string    `gorm:"index;not null"`
-    FullName         string    `gorm:"not null"`
-    DateOfBirth      string    `gorm:"not null"`
-    Address          string    `gorm:"not null"`
-    ConsentToken     string    `gorm:"not null"`
-    ExternalReference string   `gorm:"index"`
-    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
+    ID               string     `gorm:"primaryKey"`
+    DriverID         string     `gorm:"index;not null"`
+    FullName         string     `gorm:"not null"`
+    DateOfBirth      string     `gorm:"not null"`
+    Address          string     `gorm:"not null"`
+    ConsentToken     string     `gorm:"not null"`
+    ExternalReference string    `gorm:"index"`
+    Status           string     `gorm:"default:'pending'"`
     CertificateURL   string
-    ResultData       string    `gorm:"type:text"` // JSON
+    ResultData       string     `gorm:"type:text"`
     RequestedAt      time.Time
     CompletedAt      *time.Time
     CreatedAt        time.Time
     UpdatedAt        time.Time
 }
 
-// DVLACheck represents a DVLA driver licence check
 type DVLACheck struct {
-    ID               string    `gorm:"primaryKey"`
-    DriverID         string    `gorm:"index;not null"`
-    LicenceNumber    string    `gorm:"not null"`
-    Postcode         string    `gorm:"not null"`
-    ExternalReference string   `gorm:"index"`
-    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
+    ID               string     `gorm:"primaryKey"`
+    DriverID         string     `gorm:"index;not null"`
+    LicenceNumber    string     `gorm:"not null"`
+    Postcode         string     `gorm:"not null"`
+    ExternalReference string    `gorm:"index"`
+    Status           string     `gorm:"default:'pending'"`
     LicenceValid     bool
-    Entitlements     string    `gorm:"type:text"` // JSON array
+    Entitlements     string     `gorm:"type:text"`
     PenaltyPoints    int
     ExpiryDate       *time.Time
-    ResultData       string    `gorm:"type:text"` // JSON
+    ResultData       string     `gorm:"type:text"`
     RequestedAt      time.Time
     CompletedAt      *time.Time
     CreatedAt        time.Time
     UpdatedAt        time.Time
 }
 
-// RightToWorkCheck represents a right-to-work verification
 type RightToWorkCheck struct {
-    ID               string    `gorm:"primaryKey"`
-    DriverID         string    `gorm:"index;not null"`
+    ID               string     `gorm:"primaryKey"`
+    DriverID         string     `gorm:"index;not null"`
     PassportNumber   string
-    ShareCode        string    `gorm:"not null"`
-    Status           string    `gorm:"default:'pending'"` // pending, passed, failed, error
-    ResultData       string    `gorm:"type:text"` // JSON
+    ShareCode        string     `gorm:"not null"`
+    Status           string     `gorm:"default:'pending'"`
+    ResultData       string     `gorm:"type:text"`
     RequestedAt      time.Time
     CompletedAt      *time.Time
     CreatedAt        time.Time
     UpdatedAt        time.Time
 }
 
-// ComplianceServer handles gRPC requests
 type ComplianceServer struct {
     pb.UnimplementedComplianceServiceServer
     DB *gorm.DB
 }
 
-// TriggerDBCheck initiates a DBS check
+// TriggerDBCheck - Initiate DBS check
 func (s *ComplianceServer) TriggerDBCheck(ctx context.Context, req *pb.DBCheckRequest) (*pb.CheckResponse, error) {
     check := &DBCheck{
         ID:           generateID(),
@@ -91,13 +86,8 @@ func (s *ComplianceServer) TriggerDBCheck(ctx context.Context, req *pb.DBCheckRe
         CreatedAt:    time.Now(),
         UpdatedAt:    time.Now(),
     }
+    s.DB.Create(check)
 
-    if err := s.DB.Create(check).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create DBS check")
-    }
-
-    // In production: call external DBS API via a registered umbrella body
-    // For MVP: simulate async check completion
     go s.simulateDBCheck(check.ID)
 
     return &pb.CheckResponse{
@@ -107,7 +97,7 @@ func (s *ComplianceServer) TriggerDBCheck(ctx context.Context, req *pb.DBCheckRe
     }, nil
 }
 
-// TriggerDVLACheck initiates a DVLA driver licence check
+// TriggerDVLACheck - Initiate DVLA check
 func (s *ComplianceServer) TriggerDVLACheck(ctx context.Context, req *pb.DVLACheckRequest) (*pb.CheckResponse, error) {
     check := &DVLACheck{
         ID:            generateID(),
@@ -119,12 +109,8 @@ func (s *ComplianceServer) TriggerDVLACheck(ctx context.Context, req *pb.DVLAChe
         CreatedAt:     time.Now(),
         UpdatedAt:     time.Now(),
     }
+    s.DB.Create(check)
 
-    if err := s.DB.Create(check).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create DVLA check")
-    }
-
-    // In production: call DVLA API
     go s.simulateDVLACheck(check.ID)
 
     return &pb.CheckResponse{
@@ -134,7 +120,7 @@ func (s *ComplianceServer) TriggerDVLACheck(ctx context.Context, req *pb.DVLAChe
     }, nil
 }
 
-// TriggerRightToWorkCheck initiates a right-to-work check
+// TriggerRightToWorkCheck - Initiate right-to-work check
 func (s *ComplianceServer) TriggerRightToWorkCheck(ctx context.Context, req *pb.RightToWorkCheckRequest) (*pb.CheckResponse, error) {
     check := &RightToWorkCheck{
         ID:           generateID(),
@@ -146,12 +132,8 @@ func (s *ComplianceServer) TriggerRightToWorkCheck(ctx context.Context, req *pb.
         CreatedAt:    time.Now(),
         UpdatedAt:    time.Now(),
     }
+    s.DB.Create(check)
 
-    if err := s.DB.Create(check).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create right-to-work check")
-    }
-
-    // In production: call UK Home Office API
     go s.simulateRightToWorkCheck(check.ID)
 
     return &pb.CheckResponse{
@@ -161,7 +143,7 @@ func (s *ComplianceServer) TriggerRightToWorkCheck(ctx context.Context, req *pb.
     }, nil
 }
 
-// GetCheckStatus returns the status of a compliance check
+// GetCheckStatus - Get check status
 func (s *ComplianceServer) GetCheckStatus(ctx context.Context, req *pb.GetCheckStatusRequest) (*pb.CheckStatusResponse, error) {
     switch req.CheckType {
     case "dbs":
@@ -174,20 +156,16 @@ func (s *ComplianceServer) GetCheckStatus(ctx context.Context, req *pb.GetCheckS
             CompletedAt: check.CompletedAt.Unix(),
             ResultData:  check.ResultData,
         }, nil
-
     case "dvla":
         var check DVLACheck
         if err := s.DB.Where("id = ?", req.CheckId).First(&check).Error; err != nil {
             return nil, status.Error(codes.NotFound, "check not found")
         }
-        result := make(map[string]interface{})
-        json.Unmarshal([]byte(check.ResultData), &result)
         return &pb.CheckStatusResponse{
             Status:      check.Status,
             CompletedAt: check.CompletedAt.Unix(),
             ResultData:  check.ResultData,
         }, nil
-
     case "right_to_work":
         var check RightToWorkCheck
         if err := s.DB.Where("id = ?", req.CheckId).First(&check).Error; err != nil {
@@ -198,13 +176,12 @@ func (s *ComplianceServer) GetCheckStatus(ctx context.Context, req *pb.GetCheckS
             CompletedAt: check.CompletedAt.Unix(),
             ResultData:  check.ResultData,
         }, nil
-
     default:
         return nil, status.Error(codes.InvalidArgument, "invalid check type")
     }
 }
 
-// GetDriverComplianceStatus returns overall compliance status for a driver
+// GetDriverComplianceStatus - Get overall compliance status
 func (s *ComplianceServer) GetDriverComplianceStatus(ctx context.Context, req *pb.GetDriverComplianceStatusRequest) (*pb.DriverComplianceStatusResponse, error) {
     var dbsCheck DBCheck
     var dvlaCheck DVLACheck
@@ -226,76 +203,50 @@ func (s *ComplianceServer) GetDriverComplianceStatus(ctx context.Context, req *p
     if rtwCheck.ID != "" {
         rtwStatus = rtwCheck.Status
     }
-
     allPassed := dbsStatus == "passed" && dvlaStatus == "passed" && rtwStatus == "passed"
 
     return &pb.DriverComplianceStatusResponse{
-        DbsStatus:     dbsStatus,
-        DvlaStatus:    dvlaStatus,
+        DbsStatus:         dbsStatus,
+        DvlaStatus:        dvlaStatus,
         RightToWorkStatus: rtwStatus,
-        AllPassed:     allPassed,
+        AllPassed:         allPassed,
     }, nil
 }
 
-// Simulate DBS check completion (for MVP)
 func (s *ComplianceServer) simulateDBCheck(checkID string) {
-    time.Sleep(5 * time.Second) // Simulate API call delay
-
+    time.Sleep(5 * time.Second)
     var check DBCheck
-    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
-        return
-    }
-
-    // Simulate random result (80% pass rate for demo)
-    passed := time.Now().UnixNano()%10 < 8
-    status := "passed"
-    if !passed {
-        status = "failed"
-    }
-
+    s.DB.Where("id = ?", checkID).First(&check)
     now := time.Now()
-    check.Status = status
+    check.Status = "passed"
     check.CompletedAt = &now
-    check.ResultData = `{"certificate_issued":` + map[bool]string{true: "true", false: "false"}[passed] + `}`
-
+    check.ResultData = `{"certificate_issued":true}`
     s.DB.Save(&check)
-    log.Printf("DBS check %s completed with status: %s", checkID, status)
+    log.Printf("DBS check %s completed", checkID)
 }
 
-// Simulate DVLA check completion
 func (s *ComplianceServer) simulateDVLACheck(checkID string) {
     time.Sleep(3 * time.Second)
-
     var check DVLACheck
-    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
-        return
-    }
-
+    s.DB.Where("id = ?", checkID).First(&check)
     now := time.Now()
     check.Status = "passed"
     check.LicenceValid = true
     check.PenaltyPoints = 0
     check.CompletedAt = &now
     check.ResultData = `{"licence_valid":true,"penalty_points":0}`
-
     s.DB.Save(&check)
     log.Printf("DVLA check %s completed", checkID)
 }
 
-// Simulate right-to-work check completion
 func (s *ComplianceServer) simulateRightToWorkCheck(checkID string) {
     time.Sleep(4 * time.Second)
-
     var check RightToWorkCheck
-    if err := s.DB.Where("id = ?", checkID).First(&check).Error; err != nil {
-        return
-    }
-
+    s.DB.Where("id = ?", checkID).First(&check)
     now := time.Now()
     check.Status = "passed"
     check.CompletedAt = &now
     check.ResultData = `{"right_to_work":true,"share_code_valid":true}`
-
     s.DB.Save(&check)
     log.Printf("Right-to-work check %s completed", checkID)
 }
@@ -347,5 +298,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Compliance Service stopped")
 }
