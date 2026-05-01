@@ -19,53 +19,49 @@ import (
     pb "github.com/uber-clone/appointment-service/proto"
 )
 
-// ServiceProvider represents a salon, clinic, or healthcare provider
 type ServiceProvider struct {
-    ID           string    `gorm:"primaryKey"`
-    Name         string    `gorm:"not null"`
-    Type         string    `gorm:"not null"` // salon, clinic, dentist, physio, spa
-    Description  string
-    Address      string    `gorm:"not null"`
-    Latitude     float64
-    Longitude    float64
-    Phone        string
-    Email        string
-    ImageURL     string
-    Rating       float64   `gorm:"default:0"`
-    RatingCount  int       `gorm:"default:0"`
-    IsActive     bool      `gorm:"default:true"`
-    CreatedAt    time.Time
-    UpdatedAt    time.Time
-}
-
-// Service represents a specific service offered (e.g., haircut, massage, dental cleaning)
-type Service struct {
-    ID             string    `gorm:"primaryKey"`
-    ProviderID     string    `gorm:"index;not null"`
-    Name           string    `gorm:"not null"`
-    Description    string
-    DurationMin    int       `gorm:"not null"` // minutes
-    Price          float64   `gorm:"not null"`
-    DiscountPrice  float64
-    IsActive       bool      `gorm:"default:true"`
-    CreatedAt      time.Time
-    UpdatedAt      time.Time
-}
-
-// Staff represents a provider's employee (e.g., stylist, therapist)
-type Staff struct {
     ID          string    `gorm:"primaryKey"`
-    ProviderID  string    `gorm:"index;not null"`
     Name        string    `gorm:"not null"`
-    Role        string
-    Bio         string
+    Type        string    `gorm:"not null"`
+    Description string
+    Address     string    `gorm:"not null"`
+    Latitude    float64
+    Longitude   float64
+    Phone       string
+    Email       string
     ImageURL    string
+    Rating      float64   `gorm:"default:0"`
+    RatingCount int       `gorm:"default:0"`
     IsActive    bool      `gorm:"default:true"`
     CreatedAt   time.Time
     UpdatedAt   time.Time
 }
 
-// TimeSlot represents an available time slot for booking
+type Service struct {
+    ID           string    `gorm:"primaryKey"`
+    ProviderID   string    `gorm:"index;not null"`
+    Name         string    `gorm:"not null"`
+    Description  string
+    DurationMin  int       `gorm:"not null"`
+    Price        float64   `gorm:"not null"`
+    DiscountPrice float64
+    IsActive     bool      `gorm:"default:true"`
+    CreatedAt    time.Time
+    UpdatedAt    time.Time
+}
+
+type Staff struct {
+    ID         string    `gorm:"primaryKey"`
+    ProviderID string    `gorm:"index;not null"`
+    Name       string    `gorm:"not null"`
+    Role       string
+    Bio        string
+    ImageURL   string
+    IsActive   bool      `gorm:"default:true"`
+    CreatedAt  time.Time
+    UpdatedAt  time.Time
+}
+
 type TimeSlot struct {
     ID          string    `gorm:"primaryKey"`
     ProviderID  string    `gorm:"index;not null"`
@@ -77,7 +73,6 @@ type TimeSlot struct {
     CreatedAt   time.Time
 }
 
-// Appointment represents a booking
 type Appointment struct {
     ID           string     `gorm:"primaryKey"`
     BookingRef   string     `gorm:"uniqueIndex"`
@@ -90,7 +85,7 @@ type Appointment struct {
     Date         time.Time
     StartTime    time.Time
     EndTime      time.Time
-    Status       string     `gorm:"default:'pending'"` // pending, confirmed, completed, cancelled, no_show
+    Status       string     `gorm:"default:'pending'"`
     CancelledAt  *time.Time
     CancelledBy  string
     PaymentID    string
@@ -99,23 +94,18 @@ type Appointment struct {
     UpdatedAt    time.Time
 }
 
-// AppointmentServer handles gRPC requests
 type AppointmentServer struct {
     pb.UnimplementedAppointmentServiceServer
     DB *gorm.DB
 }
 
-// ListProviders returns service providers near a location
+// ListProviders - List service providers
 func (s *AppointmentServer) ListProviders(ctx context.Context, req *pb.ListProvidersRequest) (*pb.ListProvidersResponse, error) {
     var providers []ServiceProvider
     query := s.DB.Where("is_active = ?", true)
 
     if req.Type != "" {
         query = query.Where("type = ?", req.Type)
-    }
-
-    if req.Latitude != 0 && req.Longitude != 0 {
-        query = query.Order("latitude")
     }
 
     offset := (req.Page - 1) * req.PageSize
@@ -145,7 +135,7 @@ func (s *AppointmentServer) ListProviders(ctx context.Context, req *pb.ListProvi
     return &pb.ListProvidersResponse{Providers: pbProviders, Total: int32(total)}, nil
 }
 
-// GetProvider returns provider details
+// GetProvider - Get provider details
 func (s *AppointmentServer) GetProvider(ctx context.Context, req *pb.GetProviderRequest) (*pb.ServiceProvider, error) {
     var provider ServiceProvider
     if err := s.DB.Where("id = ? AND is_active = ?", req.Id, true).First(&provider).Error; err != nil {
@@ -166,7 +156,7 @@ func (s *AppointmentServer) GetProvider(ctx context.Context, req *pb.GetProvider
     }, nil
 }
 
-// ListServices returns services offered by a provider
+// ListServices - List services offered by a provider
 func (s *AppointmentServer) ListServices(ctx context.Context, req *pb.ListServicesRequest) (*pb.ListServicesResponse, error) {
     var services []Service
     if err := s.DB.Where("provider_id = ? AND is_active = ?", req.ProviderId, true).Find(&services).Error; err != nil {
@@ -188,7 +178,7 @@ func (s *AppointmentServer) ListServices(ctx context.Context, req *pb.ListServic
     return &pb.ListServicesResponse{Services: pbServices}, nil
 }
 
-// GetAvailableSlots returns available time slots for a provider/staff
+// GetAvailableSlots - Get available time slots
 func (s *AppointmentServer) GetAvailableSlots(ctx context.Context, req *pb.GetAvailableSlotsRequest) (*pb.AvailableSlotsResponse, error) {
     date := time.Unix(req.Date, 0)
     startOfDay := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
@@ -196,7 +186,6 @@ func (s *AppointmentServer) GetAvailableSlots(ctx context.Context, req *pb.GetAv
 
     var slots []TimeSlot
     query := s.DB.Where("provider_id = ? AND date = ? AND is_available = ?", req.ProviderId, startOfDay, true)
-
     if req.StaffId != "" {
         query = query.Where("staff_id = ?", req.StaffId)
     }
@@ -217,21 +206,11 @@ func (s *AppointmentServer) GetAvailableSlots(ctx context.Context, req *pb.GetAv
     return &pb.AvailableSlotsResponse{Slots: pbSlots}, nil
 }
 
-// CreateAppointment books an appointment
+// CreateAppointment - Book an appointment
 func (s *AppointmentServer) CreateAppointment(ctx context.Context, req *pb.CreateAppointmentRequest) (*pb.AppointmentResponse, error) {
-    // Get service details
     var service Service
     if err := s.DB.Where("id = ?", req.ServiceId).First(&service).Error; err != nil {
         return nil, status.Error(codes.NotFound, "service not found")
-    }
-
-    // Get staff details if specified
-    var staffName string
-    if req.StaffId != "" {
-        var staff Staff
-        if err := s.DB.Where("id = ?", req.StaffId).First(&staff).Error; err == nil {
-            staffName = staff.Name
-        }
     }
 
     startTime := time.Unix(req.StartTime, 0)
@@ -255,7 +234,6 @@ func (s *AppointmentServer) CreateAppointment(ctx context.Context, req *pb.Creat
         UpdatedAt:    time.Now(),
     }
 
-    // Mark slot as unavailable
     if req.SlotId != "" {
         s.DB.Model(&TimeSlot{}).Where("id = ?", req.SlotId).Update("is_available", false)
     }
@@ -273,7 +251,7 @@ func (s *AppointmentServer) CreateAppointment(ctx context.Context, req *pb.Creat
     }, nil
 }
 
-// GetAppointment returns appointment details
+// GetAppointment - Get appointment details
 func (s *AppointmentServer) GetAppointment(ctx context.Context, req *pb.GetAppointmentRequest) (*pb.AppointmentDetailResponse, error) {
     var appt Appointment
     if err := s.DB.Where("id = ? OR booking_ref = ?", req.Id, req.BookingRef).First(&appt).Error; err != nil {
@@ -281,24 +259,24 @@ func (s *AppointmentServer) GetAppointment(ctx context.Context, req *pb.GetAppoi
     }
 
     return &pb.AppointmentDetailResponse{
-        Id:         appt.ID,
-        BookingRef: appt.BookingRef,
-        UserId:     appt.UserID,
-        ProviderId: appt.ProviderID,
-        StaffId:    appt.StaffID,
-        ServiceId:  appt.ServiceID,
+        Id:          appt.ID,
+        BookingRef:  appt.BookingRef,
+        UserId:      appt.UserID,
+        ProviderId:  appt.ProviderID,
+        StaffId:     appt.StaffID,
+        ServiceId:   appt.ServiceID,
         ServiceName: appt.ServiceName,
-        Price:      appt.ServicePrice,
-        Date:       appt.Date.Unix(),
-        StartTime:  appt.StartTime.Unix(),
-        EndTime:    appt.EndTime.Unix(),
-        Status:     appt.Status,
-        Notes:      appt.Notes,
-        CreatedAt:  appt.CreatedAt.Unix(),
+        Price:       appt.ServicePrice,
+        Date:        appt.Date.Unix(),
+        StartTime:   appt.StartTime.Unix(),
+        EndTime:     appt.EndTime.Unix(),
+        Status:      appt.Status,
+        Notes:       appt.Notes,
+        CreatedAt:   appt.CreatedAt.Unix(),
     }, nil
 }
 
-// CancelAppointment cancels an appointment
+// CancelAppointment - Cancel an appointment
 func (s *AppointmentServer) CancelAppointment(ctx context.Context, req *pb.CancelAppointmentRequest) (*pb.Empty, error) {
     var appt Appointment
     if err := s.DB.Where("id = ?", req.AppointmentId).First(&appt).Error; err != nil {
@@ -313,18 +291,12 @@ func (s *AppointmentServer) CancelAppointment(ctx context.Context, req *pb.Cance
     appt.Status = "cancelled"
     appt.CancelledAt = &now
     appt.CancelledBy = req.CancelledBy
-
-    if err := s.DB.Save(&appt).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to cancel appointment")
-    }
-
-    // Release time slot if exists
-    // In production: mark slot as available again
+    s.DB.Save(&appt)
 
     return &pb.Empty{}, nil
 }
 
-// ListUserAppointments lists appointments for a user
+// ListUserAppointments - List user's appointments
 func (s *AppointmentServer) ListUserAppointments(ctx context.Context, req *pb.ListUserAppointmentsRequest) (*pb.ListAppointmentsResponse, error) {
     var appointments []Appointment
     query := s.DB.Where("user_id = ?", req.UserId).Order("start_time DESC")
@@ -399,7 +371,6 @@ func main() {
         }
         db.Create(provider)
 
-        // Seed some services
         services := []Service{
             {ID: generateID(), ProviderID: provider.ID, Name: "Swedish Massage", DurationMin: 60, Price: 65.00, IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
             {ID: generateID(), ProviderID: provider.ID, Name: "Deep Tissue Massage", DurationMin: 90, Price: 85.00, IsActive: true, CreatedAt: time.Now(), UpdatedAt: time.Now()},
@@ -428,5 +399,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Appointment Service stopped")
 }
