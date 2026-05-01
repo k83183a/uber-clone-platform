@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package medical;
+option go_package = "github.com/uber-clone/medical-service/proto";
+
+service MedicalService {
+    rpc RequestAmbulance(AmbulanceRequest) returns (AmbulanceResponse);
+    rpc GetAmbulanceStatus(GetAmbulanceStatusRequest) returns (AmbulanceResponse);
+    rpc CancelAmbulance(CancelAmbulanceRequest) returns (Empty);
+    rpc ListMedicalProviders(ListMedicalProvidersRequest) returns (ListMedicalProvidersResponse);
+    rpc BookAppointment(BookAppointmentRequest) returns (AppointmentResponse);
+    rpc GetAppointment(GetAppointmentRequest) returns (AppointmentDetailResponse);
+    rpc CancelAppointment(CancelAppointmentRequest) returns (Empty);
+    rpc ListUserAppointments(ListUserAppointmentsRequest) returns (ListAppointmentsResponse);
+}
+
+message AmbulanceRequest {
+    string user_id = 1;
+    string user_name = 2;
+    string user_phone = 3;
+    double latitude = 4;
+    double longitude = 5;
+    string address = 6;
+    string symptoms = 7;
+}
+
+message AmbulanceResponse {
+    string request_id = 1;
+    string status = 2;
+    string ambulance_id = 3;
+    int32 eta_minutes = 4;
+    string message = 5;
+}
+
+message GetAmbulanceStatusRequest {
+    string request_id = 1;
+}
+
+message CancelAmbulanceRequest {
+    string request_id = 1;
+    string cancelled_by = 2;
+}
+
+message ListMedicalProvidersRequest {
+    string type = 1;
+    double latitude = 2;
+    double longitude = 3;
+}
+
+message MedicalProvider {
+    string id = 1;
+    string name = 2;
+    string type = 3;
+    string address = 4;
+    string phone = 5;
+    double rating = 6;
+}
+
+message ListMedicalProvidersResponse {
+    repeated MedicalProvider providers = 1;
+}
+
+message BookAppointmentRequest {
+    string user_id = 1;
+    string service_type = 2;
+    string provider_id = 3;
+    int64 appointment_date = 4;
+    int32 duration_min = 5;
+    string reason = 6;
+}
+
+message AppointmentResponse {
+    string id = 1;
+    string provider_id = 2;
+    string provider_name = 3;
+    int64 appointment_date = 4;
+    string status = 5;
+    string message = 6;
+}
+
+message AppointmentDetailResponse {
+    string id = 1;
+    string user_id = 2;
+    string service_type = 3;
+    string provider_id = 4;
+    string provider_name = 5;
+    string provider_address = 6;
+    int64 appointment_date = 7;
+    int32 duration_min = 8;
+    string reason = 9;
+    string status = 10;
+    int64 created_at = 11;
+}
+
+message GetAppointmentRequest {
+    string appointment_id = 1;
+}
+
+message CancelAppointmentRequest {
+    string appointment_id = 1;
+    string reason = 2;
+}
+
+message ListUserAppointmentsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListAppointmentsResponse {
+    repeated AppointmentResponse appointments = 1;
+    int32 total = 2;
+}
+
+message Empty {}
