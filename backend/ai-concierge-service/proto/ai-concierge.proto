@@ -1,11 +1,72 @@
 syntax = "proto3";
-package ai-concierge;
+
+package aiconcierge;
 option go_package = "github.com/uber-clone/ai-concierge-service/proto";
-service Ai-conciergeService {
-  rpc Health(Empty) returns (HealthResponse);
+
+service AIConciergeService {
+    rpc ProcessMessage(ProcessMessageRequest) returns (ProcessMessageResponse);
+    rpc GetSuggestions(GetSuggestionsRequest) returns (SuggestionsResponse);
+    rpc ExecuteAction(ExecuteActionRequest) returns (ExecuteActionResponse);
+    rpc GetConversationHistory(GetConversationHistoryRequest) returns (ConversationHistoryResponse);
 }
-message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message ProcessMessageRequest {
+    string user_id = 1;
+    string message = 2;
+    string context = 3; // JSON context (location, last screen, etc.)
+}
+
+message Action {
+    string type = 1; // open_screen, cancel_last, book_ride, order_food, etc.
+    map<string, string> data = 2;
+}
+
+message ProcessMessageResponse {
+    string response = 1;
+    repeated Action actions = 2;
+    string intent = 3;
+}
+
+message GetSuggestionsRequest {
+    string user_id = 1;
+    string context = 2;
+}
+
+message Suggestion {
+    string title = 1;
+    string action = 2;
+    string parameters = 3; // JSON
+}
+
+message SuggestionsResponse {
+    repeated Suggestion suggestions = 1;
+}
+
+message ExecuteActionRequest {
+    string user_id = 1;
+    string action = 2;
+    string parameters = 3; // JSON
+}
+
+message ExecuteActionResponse {
+    bool success = 1;
+    string message = 2;
+    string result_data = 3; // JSON
+}
+
+message GetConversationHistoryRequest {
+    string user_id = 1;
+    int32 limit = 2;
+    int32 offset = 3;
+}
+
+message ChatMessage {
+    string role = 1; // user, assistant
+    string content = 2;
+    int64 timestamp = 3;
+}
+
+message ConversationHistoryResponse {
+    repeated ChatMessage messages = 1;
+    int32 total = 2;
 }
