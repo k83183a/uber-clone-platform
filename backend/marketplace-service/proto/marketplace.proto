@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package marketplace;
+option go_package = "github.com/uber-clone/marketplace-service/proto";
+
+service MarketplaceService {
+    rpc CreateListing(CreateListingRequest) returns (ListingResponse);
+    rpc GetListing(GetListingRequest) returns (ListingDetailResponse);
+    rpc ListListings(ListListingsRequest) returns (ListListingsResponse);
+    rpc ListUserListings(ListUserListingsRequest) returns (ListListingsResponse);
+    rpc UpdateListingStatus(UpdateListingStatusRequest) returns (Empty);
+    rpc DeleteListing(DeleteListingRequest) returns (Empty);
+    rpc CreateTransaction(CreateTransactionRequest) returns (TransactionResponse);
+    rpc CompleteTransaction(CompleteTransactionRequest) returns (Empty);
+    rpc GetUserTransactions(GetUserTransactionsRequest) returns (TransactionsResponse);
+}
+
+message CreateListingRequest {
+    string seller_id = 1;
+    string title = 2;
+    string description = 3;
+    string category = 4;
+    double price = 5;
+    string price_type = 6;
+    string listing_type = 7;
+    string condition = 8;
+    repeated string images = 9;
+    string location = 10;
+    double latitude = 11;
+    double longitude = 12;
+}
+
+message ListingResponse {
+    string id = 1;
+    string seller_id = 2;
+    string title = 3;
+    string description = 4;
+    string category = 5;
+    double price = 6;
+    string price_type = 7;
+    string listing_type = 8;
+    string condition = 9;
+    string status = 10;
+    int64 created_at = 11;
+}
+
+message ListingDetailResponse {
+    string id = 1;
+    string seller_id = 2;
+    string title = 3;
+    string description = 4;
+    string category = 5;
+    double price = 6;
+    string price_type = 7;
+    string listing_type = 8;
+    string condition = 9;
+    repeated string images = 10;
+    string location = 11;
+    double latitude = 12;
+    double longitude = 13;
+    string status = 14;
+    int32 view_count = 15;
+    int64 created_at = 16;
+}
+
+message GetListingRequest {
+    string listing_id = 1;
+}
+
+message ListListingsRequest {
+    string category = 1;
+    string listing_type = 2;
+    double min_price = 3;
+    double max_price = 4;
+    string query = 5;
+    int32 page = 6;
+    int32 page_size = 7;
+}
+
+message ListUserListingsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListListingsResponse {
+    repeated ListingResponse listings = 1;
+    int32 total = 2;
+}
+
+message UpdateListingStatusRequest {
+    string listing_id = 1;
+    string user_id = 2;
+    string status = 3;
+}
+
+message DeleteListingRequest {
+    string listing_id = 1;
+    string user_id = 2;
+}
+
+message CreateTransactionRequest {
+    string listing_id = 1;
+    string buyer_id = 2;
+    int64 rental_start = 3;
+    int64 rental_end = 4;
+}
+
+message TransactionResponse {
+    string id = 1;
+    string listing_id = 2;
+    string buyer_id = 3;
+    string seller_id = 4;
+    double amount = 5;
+    string status = 6;
+    int64 created_at = 7;
+}
+
+message CompleteTransactionRequest {
+    string transaction_id = 1;
+}
+
+message GetUserTransactionsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message TransactionsResponse {
+    repeated TransactionResponse transactions = 1;
+    int32 total = 2;
+}
+
+message Empty {}
