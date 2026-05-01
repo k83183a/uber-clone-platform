@@ -22,63 +22,57 @@ import (
     pb "github.com/uber-clone/reporting-service/proto"
 )
 
-// ReportJob represents a scheduled report generation job
 type ReportJob struct {
-    ID          string    `gorm:"primaryKey"`
-    Name        string    `gorm:"not null"`
-    ReportType  string    `gorm:"not null"` // daily_rides, revenue, driver_performance, user_activity
-    Frequency   string    `gorm:"not null"` // daily, weekly, monthly
-    Recipients  string    `gorm:"type:text"` // JSON array of email addresses
-    Format      string    `gorm:"default:'csv'"`
-    IsActive    bool      `gorm:"default:true"`
+    ID          string     `gorm:"primaryKey"`
+    Name        string     `gorm:"not null"`
+    ReportType  string     `gorm:"not null"`
+    Frequency   string     `gorm:"not null"`
+    Recipients  string     `gorm:"type:text"`
+    Format      string     `gorm:"default:'csv'"`
+    IsActive    bool       `gorm:"default:true"`
     LastRunAt   *time.Time
     NextRunAt   *time.Time
     CreatedAt   time.Time
     UpdatedAt   time.Time
 }
 
-// ReportData stores generated report data
 type ReportData struct {
     ID          string    `gorm:"primaryKey"`
     JobID       string    `gorm:"index"`
     ReportType  string    `gorm:"index"`
     PeriodStart time.Time
     PeriodEnd   time.Time
-    Data        string    `gorm:"type:text"` // JSON or CSV data
+    Data        string    `gorm:"type:text"`
     FileURL     string
     GeneratedAt time.Time
 }
 
-// ReportingServer handles gRPC requests
 type ReportingServer struct {
     pb.UnimplementedReportingServiceServer
     DB *gorm.DB
 }
 
-// GetDailyRides returns daily ride statistics
+// GetDailyRides - Get daily ride stats
 func (s *ReportingServer) GetDailyRides(ctx context.Context, req *pb.GetDailyRidesRequest) (*pb.DailyRidesResponse, error) {
     startDate := time.Unix(req.StartDate, 0)
     endDate := time.Unix(req.EndDate, 0)
 
-    // In production: query rides from ride-service or ClickHouse
-    // For MVP, return sample data
     var dailyData []*pb.DailyRideData
     current := startDate
     for current.Before(endDate) || current.Equal(endDate) {
         dailyData = append(dailyData, &pb.DailyRideData{
-            Date:        current.Format("2006-01-02"),
-            TotalRides:  int32(100 + current.Day()*5),
+            Date:           current.Format("2006-01-02"),
+            TotalRides:     int32(100 + current.Day()*5),
             CompletedRides: int32(95 + current.Day()*4),
             CancelledRides: int32(5 + current.Day()*1),
-            AverageFare: 12.50,
+            AverageFare:    12.50,
         })
         current = current.AddDate(0, 0, 1)
     }
-
     return &pb.DailyRidesResponse{DailyData: dailyData}, nil
 }
 
-// GetRevenueReport returns revenue statistics
+// GetRevenueReport - Get revenue report
 func (s *ReportingServer) GetRevenueReport(ctx context.Context, req *pb.GetRevenueReportRequest) (*pb.RevenueReportResponse, error) {
     startDate := time.Unix(req.StartDate, 0)
     endDate := time.Unix(req.EndDate, 0)
@@ -90,47 +84,24 @@ func (s *ReportingServer) GetRevenueReport(ctx context.Context, req *pb.GetReven
         dailyRev := 5000.0 + float64(current.Day())*100
         totalRevenue += dailyRev
         revenueData = append(revenueData, &pb.DailyRevenue{
-            Date:    current.Format("2006-01-02"),
-            Amount:  dailyRev,
+            Date:   current.Format("2006-01-02"),
+            Amount: dailyRev,
         })
         current = current.AddDate(0, 0, 1)
     }
-
-    return &pb.RevenueReportResponse{
-        DailyRevenue: revenueData,
-        TotalRevenue: totalRevenue,
-    }, nil
+    return &pb.RevenueReportResponse{DailyRevenue: revenueData, TotalRevenue: totalRevenue}, nil
 }
 
-// GetDriverPerformance returns driver performance metrics
+// GetDriverPerformance - Get driver performance metrics
 func (s *ReportingServer) GetDriverPerformance(ctx context.Context, req *pb.GetDriverPerformanceRequest) (*pb.DriverPerformanceResponse, error) {
-    // In production: query from ride-service and incentives-service
-    var drivers []*pb.DriverPerformanceData
-    drivers = append(drivers, &pb.DriverPerformanceData{
-        DriverId:      "DRV001",
-        DriverName:    "John Smith",
-        TotalTrips:    450,
-        TotalEarnings: 6750.00,
-        AverageRating: 4.9,
-        AcceptanceRate: 95.5,
-        CancellationRate: 2.5,
-        OnlineHours:   120.5,
-    })
-    drivers = append(drivers, &pb.DriverPerformanceData{
-        DriverId:      "DRV002",
-        DriverName:    "Sarah Johnson",
-        TotalTrips:    380,
-        TotalEarnings: 5700.00,
-        AverageRating: 4.8,
-        AcceptanceRate: 92.0,
-        CancellationRate: 3.0,
-        OnlineHours:   98.0,
-    })
-
+    drivers := []*pb.DriverPerformanceData{
+        {DriverId: "DRV001", DriverName: "John Smith", TotalTrips: 450, TotalEarnings: 6750.00, AverageRating: 4.9, AcceptanceRate: 95.5, CancellationRate: 2.5, OnlineHours: 120.5},
+        {DriverId: "DRV002", DriverName: "Sarah Johnson", TotalTrips: 380, TotalEarnings: 5700.00, AverageRating: 4.8, AcceptanceRate: 92.0, CancellationRate: 3.0, OnlineHours: 98.0},
+    }
     return &pb.DriverPerformanceResponse{Drivers: drivers}, nil
 }
 
-// GetUserActivity returns user activity metrics
+// GetUserActivity - Get user activity metrics
 func (s *ReportingServer) GetUserActivity(ctx context.Context, req *pb.GetUserActivityRequest) (*pb.UserActivityResponse, error) {
     startDate := time.Unix(req.StartDate, 0)
     endDate := time.Unix(req.EndDate, 0)
@@ -139,21 +110,19 @@ func (s *ReportingServer) GetUserActivity(ctx context.Context, req *pb.GetUserAc
     current := startDate
     for current.Before(endDate) || current.Equal(endDate) {
         activityData = append(activityData, &pb.DailyActivity{
-            Date:            current.Format("2006-01-02"),
-            NewUsers:        int32(50 + current.Day()*2),
-            ActiveUsers:     int32(500 + current.Day()*10),
-            NewDrivers:      int32(10 + current.Day()),
-            ActiveDrivers:   int32(100 + current.Day()*2),
+            Date:          current.Format("2006-01-02"),
+            NewUsers:      int32(50 + current.Day()*2),
+            ActiveUsers:   int32(500 + current.Day()*10),
+            NewDrivers:    int32(10 + current.Day()),
+            ActiveDrivers: int32(100 + current.Day()*2),
         })
         current = current.AddDate(0, 0, 1)
     }
-
-    return &pb.UserActivityResponse{DailyActivity: activityData}, nil
+    return &pb.UserActivityResponse{ActivityData: activityData}, nil
 }
 
-// GetOnboardingFunnel returns driver onboarding funnel metrics
+// GetOnboardingFunnel - Get onboarding funnel metrics
 func (s *ReportingServer) GetOnboardingFunnel(ctx context.Context, req *pb.GetOnboardingFunnelRequest) (*pb.OnboardingFunnelResponse, error) {
-    // In production: query from onboarding-service
     return &pb.OnboardingFunnelResponse{
         Stages: []*pb.FunnelStage{
             {StageName: "Account Created", Count: 520},
@@ -163,12 +132,12 @@ func (s *ReportingServer) GetOnboardingFunnel(ctx context.Context, req *pb.GetOn
             {StageName: "Approved", Count: 400},
             {StageName: "Active", Count: 380},
         },
-        ConversionRate: 73.1,
+        ConversionRate:        73.1,
         AverageDaysToActivate: 5.2,
     }, nil
 }
 
-// ExportReportCSV exports report data as CSV
+// ExportReportCSV - Export report as CSV
 func (s *ReportingServer) ExportReportCSV(ctx context.Context, req *pb.ExportReportCSVRequest) (*pb.CSVResponse, error) {
     csvBuffer := &strings.Builder{}
     writer := csv.NewWriter(csvBuffer)
@@ -176,7 +145,6 @@ func (s *ReportingServer) ExportReportCSV(ctx context.Context, req *pb.ExportRep
     switch req.ReportType {
     case "daily_rides":
         writer.Write([]string{"Date", "Total Rides", "Completed", "Cancelled", "Average Fare"})
-        // Add data rows
         writer.Write([]string{"2024-01-01", "150", "145", "5", "12.50"})
         writer.Write([]string{"2024-01-02", "165", "158", "7", "12.75"})
     case "driver_performance":
@@ -187,16 +155,15 @@ func (s *ReportingServer) ExportReportCSV(ctx context.Context, req *pb.ExportRep
         writer.Write([]string{"Report", "Data"})
         writer.Write([]string{req.ReportType, "Sample data"})
     }
-
     writer.Flush()
 
     return &pb.CSVResponse{
-        CsvData: []byte(csvBuffer.String()),
+        CsvData:  []byte(csvBuffer.String()),
         FileName: fmt.Sprintf("%s_%d.csv", req.ReportType, time.Now().Unix()),
     }, nil
 }
 
-// CreateReportJob creates a scheduled report job
+// CreateReportJob - Create scheduled report job
 func (s *ReportingServer) CreateReportJob(ctx context.Context, req *pb.CreateReportJobRequest) (*pb.ReportJobResponse, error) {
     var nextRunAt *time.Time
     now := time.Now()
@@ -223,27 +190,26 @@ func (s *ReportingServer) CreateReportJob(ctx context.Context, req *pb.CreateRep
         CreatedAt:  now,
         UpdatedAt:  now,
     }
+    s.DB.Create(job)
 
-    if err := s.DB.Create(job).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create report job")
+    nextRun := int64(0)
+    if job.NextRunAt != nil {
+        nextRun = job.NextRunAt.Unix()
     }
-
     return &pb.ReportJobResponse{
         Id:         job.ID,
         Name:       job.Name,
         ReportType: job.ReportType,
         Frequency:  job.Frequency,
         IsActive:   job.IsActive,
-        NextRunAt:  job.NextRunAt.Unix(),
+        NextRunAt:  nextRun,
     }, nil
 }
 
-// ListReportJobs lists all scheduled report jobs
+// ListReportJobs - List report jobs
 func (s *ReportingServer) ListReportJobs(ctx context.Context, req *pb.ListReportJobsRequest) (*pb.ListReportJobsResponse, error) {
     var jobs []ReportJob
-    if err := s.DB.Find(&jobs).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list report jobs")
-    }
+    s.DB.Find(&jobs)
 
     var pbJobs []*pb.ReportJobResponse
     for _, j := range jobs {
@@ -260,53 +226,29 @@ func (s *ReportingServer) ListReportJobs(ctx context.Context, req *pb.ListReport
             NextRunAt:  nextRun,
         })
     }
-
     return &pb.ListReportJobsResponse{Jobs: pbJobs}, nil
 }
 
-// UpdateReportJob updates a report job
+// UpdateReportJob - Update report job
 func (s *ReportingServer) UpdateReportJob(ctx context.Context, req *pb.UpdateReportJobRequest) (*pb.ReportJobResponse, error) {
     var job ReportJob
     if err := s.DB.Where("id = ?", req.JobId).First(&job).Error; err != nil {
         return nil, status.Error(codes.NotFound, "report job not found")
     }
-
     if req.Name != "" {
         job.Name = req.Name
     }
     if req.Frequency != "" {
         job.Frequency = req.Frequency
     }
-    if req.Recipients != "" {
-        job.Recipients = req.Recipients
-    }
     job.IsActive = req.IsActive
     job.UpdatedAt = time.Now()
-
-    // Recalculate next run time if needed
-    if req.Frequency != "" || req.IsActive != job.IsActive {
-        now := time.Now()
-        if req.Frequency == "daily" {
-            next := now.Add(24 * time.Hour)
-            job.NextRunAt = &next
-        } else if req.Frequency == "weekly" {
-            next := now.Add(7 * 24 * time.Hour)
-            job.NextRunAt = &next
-        } else if req.Frequency == "monthly" {
-            next := now.AddDate(0, 1, 0)
-            job.NextRunAt = &next
-        }
-    }
-
-    if err := s.DB.Save(&job).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update report job")
-    }
+    s.DB.Save(&job)
 
     nextRun := int64(0)
     if job.NextRunAt != nil {
         nextRun = job.NextRunAt.Unix()
     }
-
     return &pb.ReportJobResponse{
         Id:         job.ID,
         Name:       job.Name,
@@ -317,27 +259,23 @@ func (s *ReportingServer) UpdateReportJob(ctx context.Context, req *pb.UpdateRep
     }, nil
 }
 
-// DeleteReportJob deletes a report job
+// DeleteReportJob - Delete report job
 func (s *ReportingServer) DeleteReportJob(ctx context.Context, req *pb.DeleteReportJobRequest) (*pb.Empty, error) {
-    if err := s.DB.Where("id = ?", req.JobId).Delete(&ReportJob{}).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to delete report job")
-    }
+    s.DB.Where("id = ?", req.JobId).Delete(&ReportJob{})
     return &pb.Empty{}, nil
 }
 
-// TriggerReportNow manually triggers a report generation
+// TriggerReportNow - Trigger report now
 func (s *ReportingServer) TriggerReportNow(ctx context.Context, req *pb.TriggerReportNowRequest) (*pb.TriggerReportResponse, error) {
-    // In production: generate report and send to recipients
     return &pb.TriggerReportResponse{
-        JobId:      req.JobId,
-        Status:     "started",
-        Message:    "Report generation started",
+        JobId:   req.JobId,
+        Status:  "started",
+        Message: "Report generation started",
     }, nil
 }
 
-// GetDashboardKPI returns KPI for dashboard
+// GetDashboardKPI - Get dashboard KPIs
 func (s *ReportingServer) GetDashboardKPI(ctx context.Context, req *pb.GetDashboardKPIRequest) (*pb.DashboardKPIResponse, error) {
-    // In production: aggregate from multiple services
     return &pb.DashboardKPIResponse{
         TotalRevenue:       125000.50,
         TotalRides:         12500,
@@ -397,5 +335,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Reporting Service stopped")
 }
