@@ -222,4 +222,147 @@ func (s *CourierServer) ListUserParcels(ctx context.Context, req *pb.ListUserPar
 
     var pbParcels []*pb.ParcelSummary
     for _, p := range parcels {
-        pbParc
+        pbParcels = append(pbParcels, &pb.ParcelSummary{
+            Id:             p.ID,
+            TrackingNumber: p.TrackingNumber,
+            Status:         p.Status,
+            Fee:            p.Fee,
+            CreatedAt:      p.CreatedAt.Unix(),
+        })
+    }
+
+    return &pb.ListParcelsResponse{Parcels: pbParcels, Total: int32(total)}, nil
+}
+
+// ListCourierParcels - List parcels assigned to a courier
+func (s *CourierServer) ListCourierParcels(ctx context.Context, req *pb.ListCourierParcelsRequest) (*pb.ListParcelsResponse, error) {
+    var parcels []Parcel
+    query := s.DB.Where("courier_id = ?", req.CourierId).Order("created_at DESC")
+
+    offset := (req.Page - 1) * req.PageSize
+    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&parcels).Error; err != nil {
+        return nil, status.Error(codes.Internal, "failed to list parcels")
+    }
+
+    var total int64
+    s.DB.Model(&Parcel{}).Where("courier_id = ?", req.CourierId).Count(&total)
+
+    var pbParcels []*pb.ParcelSummary
+    for _, p := range parcels {
+        pbParcels = append(pbParcels, &pb.ParcelSummary{
+            Id:             p.ID,
+            TrackingNumber: p.TrackingNumber,
+            Status:         p.Status,
+            Fee:            p.Fee,
+            CreatedAt:      p.CreatedAt.Unix(),
+        })
+    }
+
+    return &pb.ListParcelsResponse{Parcels: pbParcels, Total: int32(total)}, nil
+}
+
+// GetTrackingInfo - Get tracking information for a parcel
+func (s *CourierServer) GetTrackingInfo(ctx context.Context, req *pb.GetTrackingInfoRequest) (*pb.TrackingResponse, error) {
+    var parcel Parcel
+    if err := s.DB.Where("tracking_number = ?", req.TrackingNumber).First(&parcel).Error; err != nil {
+        return nil, status.Error(codes.NotFound, "parcel not found")
+    }
+
+    events := []*pb.TrackingEvent{
+        {Status: "created", Location: parcel.SenderAddress, Timestamp: parcel.CreatedAt.Unix(), Description: "Parcel created"},
+    }
+
+    if parcel.AssignedAt != nil {
+        events = append(events, &pb.TrackingEvent{Status: "assigned", Location: "Courier assigned", Timestamp: parcel.AssignedAt.Unix(), Description: "Courier assigned to pick up"})
+    }
+    if parcel.PickedUpAt != nil {
+        events = append(events, &pb.TrackingEvent{Status: "picked_up", Location: parcel.SenderAddress, Timestamp: parcel.PickedUpAt.Unix(), Description: "Parcel picked up"})
+    }
+    if parcel.InTransitAt != nil {
+        events = append(events, &pb.TrackingEvent{Status: "in_transit", Location: "In transit", Timestamp: parcel.InTransitAt.Unix(), Description: "Parcel in transit"})
+    }
+    if parcel.OutForDeliveryAt != nil {
+        events = append(events, &pb.TrackingEvent{Status: "out_for_delivery", Location: parcel.RecipientAddress, Timestamp: parcel.OutForDeliveryAt.Unix(), Description: "Out for delivery"})
+    }
+    if parcel.DeliveredAt != nil {
+        events = append(events, &pb.TrackingEvent{Status: "delivered", Location: parcel.RecipientAddress, Timestamp: parcel.DeliveredAt.Unix(), Description: "Parcel delivered"})
+    }
+
+    return &pb.TrackingResponse{
+        TrackingNumber: parcel.TrackingNumber,
+        Status:         parcel.Status,
+        Events:         events,
+    }, nil
+}
+
+func calculateFee(req *pb.CreateParcelRequest) float64 {
+    baseFee := 3.0
+    weightFee := req.WeightKg * 0.5
+    var typeFee float64
+    switch req.PackageType {
+    case "document":
+        typeFee = 0
+    case "box":
+        typeFee = 2.0
+    case "fragile":
+        typeFee = 3.0
+    case "large":
+        typeFee = 5.0
+    default:
+        typeFee = 1.0
+    }
+    return baseFee + weightFee + typeFee
+}
+
+func generateID() string {
+    return "cour_" + time.Now().Format("20060102150405") + "_" + randomString(6)
+}
+
+func generateTrackingNumber() string {
+    return "TRK" + time.Now().Format("20060102") + randomString(8)
+}
+
+func randomString(n int) string {
+    const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+    b := make([]byte, n)
+    for i := range b {
+        b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
+    }
+    return string(b)
+}
+
+func main() {
+    godotenv.Load()
+
+    dsn := os.Getenv("DB_DSN")
+    if dsn == "" {
+        dsn = "host=postgres user=postgres password=postgres dbname=courierdb port=5432 sslmode=disable"
+    }
+
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatal("Failed to connect to database:", err)
+    }
+
+    db.AutoMigrate(&Parcel{}, &DeliveryProof{})
+
+    grpcServer := grpc.NewServer()
+    pb.RegisterCourierServiceServer(grpcServer, &CourierServer{DB: db})
+
+    lis, err := net.Listen("tcp", ":50058")
+    if err != nil {
+        log.Fatal("Failed to listen:", err)
+    }
+
+    go func() {
+        log.Println("✅ Courier Service running on port 50058")
+        if err := grpcServer.Serve(lis); err != nil {
+            log.Fatal("Failed to serve:", err)
+        }
+    }()
+
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+    <-quit
+    grpcServer.GracefulStop()
+}
