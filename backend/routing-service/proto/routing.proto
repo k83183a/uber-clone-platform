@@ -1,11 +1,110 @@
 syntax = "proto3";
+
 package routing;
 option go_package = "github.com/uber-clone/routing-service/proto";
+
 service RoutingService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc GetDirections(DirectionsRequest) returns (DirectionsResponse);
+    rpc Geocode(GeocodeRequest) returns (GeocodeResponse);
+    rpc ReverseGeocode(ReverseGeocodeRequest) returns (ReverseGeocodeResponse);
+    rpc GetDistanceMatrix(DistanceMatrixRequest) returns (DistanceMatrixResponse);
+    rpc GetMapTile(MapTileRequest) returns (MapTileResponse);
 }
-message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message Location {
+    double lat = 1;
+    double lng = 2;
+}
+
+message DirectionsRequest {
+    Location origin = 1;
+    Location destination = 2;
+    string provider = 3; // google, mapbox, osm
+    string vehicle_type = 4;
+    repeated Location waypoints = 5;
+    bool alternatives = 6;
+}
+
+message Step {
+    double distance_meters = 1;
+    int32 duration_seconds = 2;
+    string instruction = 3;
+    string maneuver = 4;
+    Location start_location = 5;
+    Location end_location = 6;
+    string polyline = 7;
+}
+
+message Route {
+    string polyline = 1;
+    double distance_meters = 2;
+    int32 duration_seconds = 3;
+    repeated Step steps = 4;
+    string summary = 5;
+}
+
+message DirectionsResponse {
+    repeated Route routes = 1;
+    string provider_used = 2;
+    int32 request_duration_ms = 3;
+}
+
+message GeocodeRequest {
+    string query = 1;
+    string provider = 2;
+    Location bias = 3;
+    int32 limit = 4;
+}
+
+message GeocodeResult {
+    string formatted_address = 1;
+    Location location = 2;
+    double confidence = 3;
+    map<string, string> components = 4;
+}
+
+message GeocodeResponse {
+    repeated GeocodeResult results = 1;
+}
+
+message ReverseGeocodeRequest {
+    Location location = 1;
+    string provider = 2;
+}
+
+message ReverseGeocodeResponse {
+    repeated GeocodeResult results = 1;
+}
+
+message DistanceMatrixRequest {
+    repeated Location origins = 1;
+    repeated Location destinations = 2;
+    string provider = 3;
+}
+
+message Element {
+    double distance_meters = 1;
+    int32 duration_seconds = 2;
+    string status = 3;
+}
+
+message Row {
+    repeated Element elements = 1;
+}
+
+message DistanceMatrixResponse {
+    repeated Row rows = 1;
+}
+
+message MapTileRequest {
+    int32 z = 1;
+    int32 x = 2;
+    int32 y = 3;
+    string provider = 4;
+    string style = 5;
+}
+
+message MapTileResponse {
+    bytes tile_data = 1;
+    string content_type = 2;
 }
