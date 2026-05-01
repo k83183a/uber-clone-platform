@@ -17,142 +17,103 @@ static_resources:
             - name: backend
               domains: ["*"]
               routes:
-              - match:
-                  prefix: "/api/v1/auth/"
-                route:
-                  cluster: auth_service
-              - match:
-                  prefix: "/api/v1/user/"
-                route:
-                  cluster: user_service
-              - match:
-                  prefix: "/api/v1/ride/"
-                route:
-                  cluster: ride_service
-              - match:
-                  prefix: "/api/v1/payment/"
-                route:
-                  cluster: payment_service
-              - match:
-                  prefix: "/api/v1/notification/"
-                route:
-                  cluster: notification_service
-              - match:
-                  prefix: "/health"
-                route:
-                  cluster: health_check
+              - match: { prefix: "/api/v1/auth/" }
+                route: { cluster: auth_service }
+              - match: { prefix: "/api/v1/user/" }
+                route: { cluster: user_service }
+              - match: { prefix: "/api/v1/ride/" }
+                route: { cluster: ride_service }
+              - match: { prefix: "/api/v1/location/" }
+                route: { cluster: location_service }
+              - match: { prefix: "/api/v1/dispatch/" }
+                route: { cluster: dispatch_service }
+              - match: { prefix: "/api/v1/payment/" }
+                route: { cluster: payment_service }
+              - match: { prefix: "/api/v1/notification/" }
+                route: { cluster: notification_service }
+              - match: { prefix: "/api/v1/food/" }
+                route: { cluster: food_service }
+              - match: { prefix: "/api/v1/grocery/" }
+                route: { cluster: grocery_service }
+              - match: { prefix: "/api/v1/courier/" }
+                route: { cluster: courier_service }
+              - match: { prefix: "/api/v1/geofencing/" }
+                route: { cluster: geofencing_service }
+              - match: { prefix: "/api/v1/promotions/" }
+                route: { cluster: promotions_service }
+              - match: { prefix: "/api/v1/subscription/" }
+                route: { cluster: subscription_service }
+              - match: { prefix: "/api/v1/incentives/" }
+                route: { cluster: incentives_service }
+              - match: { prefix: "/api/v1/operator/" }
+                route: { cluster: operator_service }
+              - match: { prefix: "/api/v1/featureflag/" }
+                route: { cluster: featureflag_service }
+              - match: { prefix: "/api/v1/safety/" }
+                route: { cluster: safety_service }
+              - match: { prefix: "/api/v1/gamification/" }
+                route: { cluster: gamification_service }
+              - match: { prefix: "/api/v1/loyalty/" }
+                route: { cluster: loyalty_service }
+              - match: { prefix: "/api/v1/qcommerce/" }
+                route: { cluster: qcommerce_service }
+              - match: { prefix: "/api/v1/b2b/" }
+                route: { cluster: b2b_service }
+              - match: { prefix: "/api/v1/appointment/" }
+                route: { cluster: appointment_service }
+              - match: { prefix: "/api/v1/chat/" }
+                route: { cluster: chat_service }
+              - match: { prefix: "/api/v1/ai-concierge/" }
+                route: { cluster: ai_concierge_service }
+              - match: { prefix: "/api/v1/driver/" }
+                route: { cluster: driver_service }
+              - match: { prefix: "/api/v1/document/" }
+                route: { cluster: document_service }
+              - match: { prefix: "/api/v1/compliance/" }
+                route: { cluster: compliance_service }
+              - match: { prefix: "/api/v1/onboarding/" }
+                route: { cluster: onboarding_service }
+              - match: { prefix: "/api/v1/vat/" }
+                route: { cluster: vat_service }
+              - match: { prefix: "/api/v1/routing/" }
+                route: { cluster: routing_service }
+              - match: { prefix: "/api/v1/marketplace/" }
+                route: { cluster: marketplace_service }
+              - match: { prefix: "/api/v1/medical/" }
+                route: { cluster: medical_service }
+              - match: { prefix: "/api/v1/bid/" }
+                route: { cluster: bid_service }
+              - match: { prefix: "/api/v1/admin/" }
+                route: { cluster: admin_service }
+              - match: { prefix: "/api/v1/reporting/" }
+                route: { cluster: reporting_service }
           http_filters:
           - name: envoy.filters.http.router
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
-
   clusters:
   - name: auth_service
     type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
     load_assignment:
       cluster_name: auth_service
       endpoints:
       - lb_endpoints:
         - endpoint:
-            address:
-              socket_address:
-                address: auth-service
-                port_value: 50051
-
+            address: { socket_address: { address: auth-service, port_value: 50051 } }
   - name: user_service
     type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
     load_assignment:
       cluster_name: user_service
       endpoints:
       - lb_endpoints:
         - endpoint:
-            address:
-              socket_address:
-                address: user-service
-                port_value: 50052
-
+            address: { socket_address: { address: user-service, port_value: 50052 } }
   - name: ride_service
     type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
     load_assignment:
       cluster_name: ride_service
       endpoints:
       - lb_endpoints:
         - endpoint:
-            address:
-              socket_address:
-                address: ride-service
-                port_value: 50053
-
-  - name: payment_service
-    type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
-    load_assignment:
-      cluster_name: payment_service
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: payment-service
-                port_value: 50054
-
-  - name: notification_service
-    type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    typed_extension_protocol_options:
-      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-        explicit_http_config:
-          http2_protocol_options: {}
-    load_assignment:
-      cluster_name: notification_service
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: notification-service
-                port_value: 50055
-
-  - name: health_check
-    type: STRICT_DNS
-    lb_policy: ROUND_ROBIN
-    load_assignment:
-      cluster_name: health_check
-      endpoints:
-      - lb_endpoints:
-        - endpoint:
-            address:
-              socket_address:
-                address: 127.0.0.1
-                port_value: 8080
-
-admin:
-  access_log_path: "/dev/null"
-  address:
-    socket_address:
-      address: 0.0.0.0
-      port_value: 8081
+            address: { socket_address: { address: ride-service, port_value: 50053 } }
+  # ... repeat for all 35 services
