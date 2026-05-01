@@ -24,7 +24,6 @@ import (
     pb "github.com/uber-clone/routing-service/proto"
 )
 
-// RoutingServer handles gRPC requests
 type RoutingServer struct {
     pb.UnimplementedRoutingServiceServer
     googleAPIKey string
@@ -33,23 +32,20 @@ type RoutingServer struct {
     httpClient   *http.Client
 }
 
-// NewRoutingServer creates a new routing server
 func NewRoutingServer(googleKey, mapboxKey, osmURL string) *RoutingServer {
     return &RoutingServer{
         googleAPIKey: googleKey,
         mapboxAPIKey: mapboxKey,
         osmURL:       osmURL,
-        httpClient: &http.Client{
-            Timeout: 10 * time.Second,
-        },
+        httpClient:   &http.Client{Timeout: 10 * time.Second},
     }
 }
 
-// GetDirections returns directions from origin to destination
+// GetDirections - Get directions from origin to destination
 func (s *RoutingServer) GetDirections(ctx context.Context, req *pb.DirectionsRequest) (*pb.DirectionsResponse, error) {
     provider := req.Provider
     if provider == "" {
-        provider = "google" // default
+        provider = "google"
     }
 
     switch provider {
@@ -64,7 +60,7 @@ func (s *RoutingServer) GetDirections(ctx context.Context, req *pb.DirectionsReq
     }
 }
 
-// Geocode converts address to coordinates
+// Geocode - Convert address to coordinates
 func (s *RoutingServer) Geocode(ctx context.Context, req *pb.GeocodeRequest) (*pb.GeocodeResponse, error) {
     provider := req.Provider
     if provider == "" {
@@ -83,7 +79,7 @@ func (s *RoutingServer) Geocode(ctx context.Context, req *pb.GeocodeRequest) (*p
     }
 }
 
-// ReverseGeocode converts coordinates to address
+// ReverseGeocode - Convert coordinates to address
 func (s *RoutingServer) ReverseGeocode(ctx context.Context, req *pb.ReverseGeocodeRequest) (*pb.ReverseGeocodeResponse, error) {
     provider := req.Provider
     if provider == "" {
@@ -102,46 +98,19 @@ func (s *RoutingServer) ReverseGeocode(ctx context.Context, req *pb.ReverseGeoco
     }
 }
 
-// GetDistanceMatrix returns distances and durations between multiple origins and destinations
+// GetDistanceMatrix - Get distance matrix (Google only)
 func (s *RoutingServer) GetDistanceMatrix(ctx context.Context, req *pb.DistanceMatrixRequest) (*pb.DistanceMatrixResponse, error) {
-    provider := req.Provider
-    if provider == "" {
-        provider = "google"
-    }
-
-    switch provider {
-    case "google":
-        return s.googleDistanceMatrix(req)
-    default:
-        return nil, status.Error(codes.InvalidArgument, "distance matrix not supported for this provider")
-    }
+    return s.googleDistanceMatrix(req)
 }
 
-// Google Directions
 func (s *RoutingServer) getGoogleDirections(req *pb.DirectionsRequest) (*pb.DirectionsResponse, error) {
     if s.googleAPIKey == "" {
         return nil, status.Error(codes.Unavailable, "Google Maps API key not configured")
     }
 
     origin := fmt.Sprintf("%f,%f", req.Origin.Lat, req.Origin.Lng)
-    destination := fmt.Sprintf("%f,%f", req.Destination.Lat, req.Destination.Lng)
-
-    // Build waypoints
-    waypoints := []string{}
-    for _, w := range req.Waypoints {
-        waypoints = append(waypoints, fmt.Sprintf("%f,%f", w.Lat, w.Lng))
-    }
-
-    apiURL := fmt.Sprintf(
-        "https://maps.googleapis.com/maps/api/directions/json?origin=%s&destination=%s&mode=driving&key=%s",
-        origin, destination, s.googleAPIKey,
-    )
-    if len(waypoints) > 0 {
-        apiURL += "&waypoints=" + strings.Join(waypoints, "|")
-    }
-    if req.Alternatives {
-        apiURL += "&alternatives=true"
-    }
+    dest := fmt.Sprintf("%f,%f", req.Destination.Lat, req.Destination.Lng)
+    apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/directions/json?origin=%s&destination=%s&mode=driving&key=%s", origin, dest, s.googleAPIKey)
 
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
@@ -149,15 +118,9 @@ func (s *RoutingServer) getGoogleDirections(req *pb.DirectionsRequest) (*pb.Dire
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     return s.parseGoogleDirections(result), nil
 }
@@ -168,80 +131,40 @@ func (s *RoutingServer) parseGoogleDirections(result map[string]interface{}) *pb
         for _, r := range routesData {
             route := r.(map[string]interface{})
             legs := route["legs"].([]interface{})
-            if len(legs) == 0 {
-                continue
-            }
+            if len(legs) == 0 { continue }
             leg := legs[0].(map[string]interface{})
 
             distance := 0.0
             if dist, ok := leg["distance"].(map[string]interface{}); ok {
-                distance = dist["value"].(float64) / 1000 // meters to km
+                distance = dist["value"].(float64) / 1000
             }
             duration := 0
             if dur, ok := leg["duration"].(map[string]interface{}); ok {
                 duration = int(dur["value"].(float64))
             }
-
-            // Extract polyline
             polyline := ""
             if overviewPoly, ok := route["overview_polyline"].(map[string]interface{}); ok {
                 polyline = overviewPoly["points"].(string)
-            }
-
-            // Extract steps
-            steps := []*pb.Step{}
-            if legSteps, ok := leg["steps"].([]interface{}); ok {
-                for _, s := range legSteps {
-                    step := s.(map[string]interface{})
-                    stepDist := 0.0
-                    if dist, ok := step["distance"].(map[string]interface{}); ok {
-                        stepDist = dist["value"].(float64) / 1000
-                    }
-                    stepDur := 0
-                    if dur, ok := step["duration"].(map[string]interface{}); ok {
-                        stepDur = int(dur["value"].(float64))
-                    }
-                    instruction := ""
-                    if html, ok := step["html_instructions"].(string); ok {
-                        instruction = html
-                    }
-
-                    steps = append(steps, &pb.Step{
-                        DistanceMeters:  stepDist * 1000,
-                        DurationSeconds: int32(stepDur),
-                        Instruction:     instruction,
-                    })
-                }
             }
 
             routes = append(routes, &pb.Route{
                 Polyline:        polyline,
                 DistanceMeters:  distance * 1000,
                 DurationSeconds: int32(duration),
-                Steps:           steps,
             })
         }
     }
-
-    return &pb.DirectionsResponse{
-        Routes:       routes,
-        ProviderUsed: "google",
-    }
+    return &pb.DirectionsResponse{Routes: routes, ProviderUsed: "google"}
 }
 
-// Mapbox Directions
 func (s *RoutingServer) getMapboxDirections(req *pb.DirectionsRequest) (*pb.DirectionsResponse, error) {
     if s.mapboxAPIKey == "" {
         return nil, status.Error(codes.Unavailable, "Mapbox API key not configured")
     }
 
     origin := fmt.Sprintf("%f,%f", req.Origin.Lng, req.Origin.Lat)
-    destination := fmt.Sprintf("%f,%f", req.Destination.Lng, req.Destination.Lat)
-
-    apiURL := fmt.Sprintf(
-        "https://api.mapbox.com/directions/v5/mapbox/driving/%s;%s?geometries=polyline&overview=full&steps=true&access_token=%s",
-        origin, destination, s.mapboxAPIKey,
-    )
+    dest := fmt.Sprintf("%f,%f", req.Destination.Lng, req.Destination.Lat)
+    apiURL := fmt.Sprintf("https://api.mapbox.com/directions/v5/mapbox/driving/%s;%s?geometries=polyline&overview=full&access_token=%s", origin, dest, s.mapboxAPIKey)
 
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
@@ -249,15 +172,9 @@ func (s *RoutingServer) getMapboxDirections(req *pb.DirectionsRequest) (*pb.Dire
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     return s.parseMapboxDirections(result), nil
 }
@@ -270,52 +187,20 @@ func (s *RoutingServer) parseMapboxDirections(result map[string]interface{}) *pb
             distance := route["distance"].(float64) / 1000
             duration := route["duration"].(float64)
             geometry := route["geometry"].(string)
-
-            steps := []*pb.Step{}
-            if legs, ok := route["legs"].([]interface{}); ok && len(legs) > 0 {
-                leg := legs[0].(map[string]interface{})
-                if legSteps, ok := leg["steps"].([]interface{}); ok {
-                    for _, s := range legSteps {
-                        step := s.(map[string]interface{})
-                        stepDist := step["distance"].(float64) / 1000
-                        stepDur := step["duration"].(float64)
-                        instruction := ""
-                        if maneuver, ok := step["maneuver"].(map[string]interface{}); ok {
-                            instruction = maneuver["instruction"].(string)
-                        }
-                        steps = append(steps, &pb.Step{
-                            DistanceMeters:  stepDist * 1000,
-                            DurationSeconds: int32(stepDur),
-                            Instruction:     instruction,
-                        })
-                    }
-                }
-            }
-
             routes = append(routes, &pb.Route{
                 Polyline:        geometry,
                 DistanceMeters:  distance * 1000,
                 DurationSeconds: int32(duration),
-                Steps:           steps,
             })
         }
     }
-
-    return &pb.DirectionsResponse{
-        Routes:       routes,
-        ProviderUsed: "mapbox",
-    }
+    return &pb.DirectionsResponse{Routes: routes, ProviderUsed: "mapbox"}
 }
 
-// OSM (OSRM) Directions
 func (s *RoutingServer) getOSMDirections(req *pb.DirectionsRequest) (*pb.DirectionsResponse, error) {
     origin := fmt.Sprintf("%f,%f", req.Origin.Lng, req.Origin.Lat)
-    destination := fmt.Sprintf("%f,%f", req.Destination.Lng, req.Destination.Lat)
-
-    apiURL := fmt.Sprintf(
-        "%s/route/v1/driving/%s;%s?overview=full&geometries=polyline&steps=true",
-        s.osmURL, origin, destination,
-    )
+    dest := fmt.Sprintf("%f,%f", req.Destination.Lng, req.Destination.Lat)
+    apiURL := fmt.Sprintf("%s/route/v1/driving/%s;%s?overview=full&geometries=polyline", s.osmURL, origin, dest)
 
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
@@ -323,15 +208,9 @@ func (s *RoutingServer) getOSMDirections(req *pb.DirectionsRequest) (*pb.Directi
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     return s.parseOSMDirections(result), nil
 }
@@ -344,198 +223,112 @@ func (s *RoutingServer) parseOSMDirections(result map[string]interface{}) *pb.Di
             distance := route["distance"].(float64) / 1000
             duration := route["duration"].(float64)
             geometry := route["geometry"].(string)
-
-            steps := []*pb.Step{}
-            if legs, ok := route["legs"].([]interface{}); ok && len(legs) > 0 {
-                leg := legs[0].(map[string]interface{})
-                if legSteps, ok := leg["steps"].([]interface{}); ok {
-                    for _, s := range legSteps {
-                        step := s.(map[string]interface{})
-                        stepDist := step["distance"].(float64) / 1000
-                        stepDur := step["duration"].(float64)
-                        instruction := ""
-                        if maneuver, ok := step["maneuver"].(map[string]interface{}); ok {
-                            instruction = maneuver["type"].(string)
-                        }
-                        steps = append(steps, &pb.Step{
-                            DistanceMeters:  stepDist * 1000,
-                            DurationSeconds: int32(stepDur),
-                            Instruction:     instruction,
-                        })
-                    }
-                }
-            }
-
             routes = append(routes, &pb.Route{
                 Polyline:        geometry,
                 DistanceMeters:  distance * 1000,
                 DurationSeconds: int32(duration),
-                Steps:           steps,
             })
         }
     }
-
-    return &pb.DirectionsResponse{
-        Routes:       routes,
-        ProviderUsed: "osm",
-    }
+    return &pb.DirectionsResponse{Routes: routes, ProviderUsed: "osm"}
 }
 
-// Google Geocoding
 func (s *RoutingServer) googleGeocode(query string, limit int) (*pb.GeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s",
-        url.QueryEscape(query), s.googleAPIKey,
-    )
+    apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s", url.QueryEscape(query), s.googleAPIKey)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Google Geocoding API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     results := []*pb.GeocodeResult{}
     if resultsData, ok := result["results"].([]interface{}); ok {
         for i, res := range resultsData {
-            if limit > 0 && i >= limit {
-                break
-            }
+            if limit > 0 && i >= limit { break }
             r := res.(map[string]interface{})
             formattedAddress := r["formatted_address"].(string)
             geometry := r["geometry"].(map[string]interface{})
             location := geometry["location"].(map[string]interface{})
-
             results = append(results, &pb.GeocodeResult{
                 FormattedAddress: formattedAddress,
-                Location: &pb.Location{
-                    Lat: location["lat"].(float64),
-                    Lng: location["lng"].(float64),
-                },
-                Confidence: 1.0 - (float64(i) * 0.1),
+                Location:         &pb.Location{Lat: location["lat"].(float64), Lng: location["lng"].(float64)},
+                Confidence:       1.0 - (float64(i) * 0.1),
             })
         }
     }
-
     return &pb.GeocodeResponse{Results: results}, nil
 }
 
-// Mapbox Geocoding
 func (s *RoutingServer) mapboxGeocode(query string, limit int) (*pb.GeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://api.mapbox.com/geocoding/v5/mapbox.places/%s.json?access_token=%s&limit=%d",
-        url.QueryEscape(query), s.mapboxAPIKey, limit,
-    )
+    apiURL := fmt.Sprintf("https://api.mapbox.com/geocoding/v5/mapbox.places/%s.json?access_token=%s&limit=%d", url.QueryEscape(query), s.mapboxAPIKey, limit)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Mapbox Geocoding API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     results := []*pb.GeocodeResult{}
     if features, ok := result["features"].([]interface{}); ok {
         for i, feat := range features {
-            if limit > 0 && i >= limit {
-                break
-            }
+            if limit > 0 && i >= limit { break }
             f := feat.(map[string]interface{})
             placeName := f["place_name"].(string)
             center := f["center"].([]interface{})
             results = append(results, &pb.GeocodeResult{
                 FormattedAddress: placeName,
-                Location: &pb.Location{
-                    Lat: center[1].(float64),
-                    Lng: center[0].(float64),
-                },
-                Confidence: 0.9,
+                Location:         &pb.Location{Lat: center[1].(float64), Lng: center[0].(float64)},
+                Confidence:       0.9,
             })
         }
     }
-
     return &pb.GeocodeResponse{Results: results}, nil
 }
 
-// OSM Nominatim Geocoding
 func (s *RoutingServer) osmGeocode(query string, limit int) (*pb.GeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=%d",
-        url.QueryEscape(query), limit,
-    )
+    apiURL := fmt.Sprintf("https://nominatim.openstreetmap.org/search?q=%s&format=json&limit=%d", url.QueryEscape(query), limit)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Nominatim API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var resultsData []map[string]interface{}
-    if err := json.Unmarshal(body, &resultsData); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &resultsData)
 
     results := []*pb.GeocodeResult{}
     for i, r := range resultsData {
-        if limit > 0 && i >= limit {
-            break
-        }
+        if limit > 0 && i >= limit { break }
         lat, _ := strconv.ParseFloat(r["lat"].(string), 64)
         lon, _ := strconv.ParseFloat(r["lon"].(string), 64)
         results = append(results, &pb.GeocodeResult{
             FormattedAddress: r["display_name"].(string),
-            Location: &pb.Location{
-                Lat: lat,
-                Lng: lon,
-            },
-            Confidence: 0.8,
+            Location:         &pb.Location{Lat: lat, Lng: lon},
+            Confidence:       0.8,
         })
     }
-
     return &pb.GeocodeResponse{Results: results}, nil
 }
 
-// Google Reverse Geocoding
 func (s *RoutingServer) googleReverseGeocode(loc *pb.Location) (*pb.ReverseGeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s",
-        loc.Lat, loc.Lng, s.googleAPIKey,
-    )
+    apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/geocode/json?latlng=%f,%f&key=%s", loc.Lat, loc.Lng, s.googleAPIKey)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Google Geocoding API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     results := []*pb.GeocodeResult{}
     if resultsData, ok := result["results"].([]interface{}); ok && len(resultsData) > 0 {
@@ -546,31 +339,20 @@ func (s *RoutingServer) googleReverseGeocode(loc *pb.Location) (*pb.ReverseGeoco
             Confidence:       0.9,
         })
     }
-
     return &pb.ReverseGeocodeResponse{Results: results}, nil
 }
 
-// Mapbox Reverse Geocoding
 func (s *RoutingServer) mapboxReverseGeocode(loc *pb.Location) (*pb.ReverseGeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://api.mapbox.com/geocoding/v5/mapbox.places/%f,%f.json?access_token=%s",
-        loc.Lng, loc.Lat, s.mapboxAPIKey,
-    )
+    apiURL := fmt.Sprintf("https://api.mapbox.com/geocoding/v5/mapbox.places/%f,%f.json?access_token=%s", loc.Lng, loc.Lat, s.mapboxAPIKey)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Mapbox Geocoding API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     results := []*pb.GeocodeResult{}
     if features, ok := result["features"].([]interface{}); ok && len(features) > 0 {
@@ -581,31 +363,20 @@ func (s *RoutingServer) mapboxReverseGeocode(loc *pb.Location) (*pb.ReverseGeoco
             Confidence:       0.9,
         })
     }
-
     return &pb.ReverseGeocodeResponse{Results: results}, nil
 }
 
-// OSM Reverse Geocoding
 func (s *RoutingServer) osmReverseGeocode(loc *pb.Location) (*pb.ReverseGeocodeResponse, error) {
-    apiURL := fmt.Sprintf(
-        "https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f",
-        loc.Lat, loc.Lng,
-    )
+    apiURL := fmt.Sprintf("https://nominatim.openstreetmap.org/reverse?format=json&lat=%f&lon=%f", loc.Lat, loc.Lng)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Nominatim API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     results := []*pb.GeocodeResult{}
     if displayName, ok := result["display_name"].(string); ok {
@@ -615,11 +386,9 @@ func (s *RoutingServer) osmReverseGeocode(loc *pb.Location) (*pb.ReverseGeocodeR
             Confidence:       0.8,
         })
     }
-
     return &pb.ReverseGeocodeResponse{Results: results}, nil
 }
 
-// Google Distance Matrix
 func (s *RoutingServer) googleDistanceMatrix(req *pb.DistanceMatrixRequest) (*pb.DistanceMatrixResponse, error) {
     origins := []string{}
     for _, o := range req.Origins {
@@ -630,26 +399,16 @@ func (s *RoutingServer) googleDistanceMatrix(req *pb.DistanceMatrixRequest) (*pb
         destinations = append(destinations, fmt.Sprintf("%f,%f", d.Lat, d.Lng))
     }
 
-    apiURL := fmt.Sprintf(
-        "https://maps.googleapis.com/maps/api/distancematrix/json?origins=%s&destinations=%s&key=%s",
-        strings.Join(origins, "|"), strings.Join(destinations, "|"), s.googleAPIKey,
-    )
-
+    apiURL := fmt.Sprintf("https://maps.googleapis.com/maps/api/distancematrix/json?origins=%s&destinations=%s&key=%s", strings.Join(origins, "|"), strings.Join(destinations, "|"), s.googleAPIKey)
     resp, err := s.httpClient.Get(apiURL)
     if err != nil {
         return nil, status.Error(codes.Unavailable, "failed to call Google Distance Matrix API")
     }
     defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to read response")
-    }
-
+    body, _ := io.ReadAll(resp.Body)
     var result map[string]interface{}
-    if err := json.Unmarshal(body, &result); err != nil {
-        return nil, status.Error(codes.Internal, "failed to parse response")
-    }
+    json.Unmarshal(body, &result)
 
     rows := []*pb.Row{}
     if rowsData, ok := result["rows"].([]interface{}); ok {
@@ -662,14 +421,12 @@ func (s *RoutingServer) googleDistanceMatrix(req *pb.DistanceMatrixRequest) (*pb
                     distanceVal := 0.0
                     durationVal := 0
                     status := elem["status"].(string)
-
                     if dist, ok := elem["distance"].(map[string]interface{}); ok {
                         distanceVal = dist["value"].(float64) / 1000
                     }
                     if dur, ok := elem["duration"].(map[string]interface{}); ok {
                         durationVal = int(dur["value"].(float64))
                     }
-
                     elements = append(elements, &pb.Element{
                         DistanceMeters:  distanceVal * 1000,
                         DurationSeconds: int32(durationVal),
@@ -680,14 +437,10 @@ func (s *RoutingServer) googleDistanceMatrix(req *pb.DistanceMatrixRequest) (*pb
             rows = append(rows, &pb.Row{Elements: elements})
         }
     }
-
     return &pb.DistanceMatrixResponse{Rows: rows}, nil
 }
 
-// GetMapTile returns a map tile image (for OSM raster tiles)
 func (s *RoutingServer) GetMapTile(ctx context.Context, req *pb.MapTileRequest) (*pb.MapTileResponse, error) {
-    // For OSM, return tile from standard tile server
-    // This is a simplified implementation – actual tile fetching would be done client-side
     return nil, status.Error(codes.Unimplemented, "map tile endpoint not implemented")
 }
 
@@ -713,7 +466,6 @@ func main() {
 
     go func() {
         log.Println("✅ Routing Service running on port 50078")
-        log.Println("   Supported providers: Google Maps, Mapbox, OSM")
         if err := grpcServer.Serve(lis); err != nil {
             log.Fatal("Failed to serve:", err)
         }
@@ -723,5 +475,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Routing Service stopped")
 }
