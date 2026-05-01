@@ -20,29 +20,27 @@ import (
     pb "github.com/uber-clone/b2b-service/proto"
 )
 
-// Company represents a corporate client
 type Company struct {
-    ID              string    `gorm:"primaryKey"`
-    Name            string    `gorm:"not null"`
-    TaxID           string    `gorm:"uniqueIndex"`
-    Email           string
-    Phone           string
-    Address         string
-    BillingAddress  string
-    PaymentMethod   string    `gorm:"default:'invoice'"` // wallet, invoice
-    WalletBalance   float64   `gorm:"default:0"`
-    CreditLimit     float64   `gorm:"default:0"`
-    Status          string    `gorm:"default:'active'"`
-    CreatedAt       time.Time
-    UpdatedAt       time.Time
+    ID             string    `gorm:"primaryKey"`
+    Name           string    `gorm:"not null"`
+    TaxID          string    `gorm:"uniqueIndex"`
+    Email          string
+    Phone          string
+    Address        string
+    BillingAddress string
+    PaymentMethod  string    `gorm:"default:'invoice'"`
+    WalletBalance  float64   `gorm:"default:0"`
+    CreditLimit    float64   `gorm:"default:0"`
+    Status         string    `gorm:"default:'active'"`
+    CreatedAt      time.Time
+    UpdatedAt      time.Time
 }
 
-// Employee represents a company employee who can request rides/orders
 type Employee struct {
     ID           string    `gorm:"primaryKey"`
     CompanyID    string    `gorm:"index;not null"`
-    UserID       string    `gorm:"uniqueIndex;not null"` // reference to user-service
-    Role         string    `gorm:"default:'employee'"`   // employee, manager, admin
+    UserID       string    `gorm:"uniqueIndex;not null"`
+    Role         string    `gorm:"default:'employee'"`
     Department   string
     CostCenter   string
     MonthlyBudget float64  `gorm:"default:0"`
@@ -50,22 +48,20 @@ type Employee struct {
     UpdatedAt    time.Time
 }
 
-// ApprovalRequest represents a pending approval for a service request
 type ApprovalRequest struct {
-    ID               string     `gorm:"primaryKey"`
-    CompanyID        string     `gorm:"index;not null"`
-    EmployeeID       string     `gorm:"index;not null"`
-    ServiceType      string     `gorm:"not null"` // ride, food, grocery, courier
-    ServiceRequest   string     `gorm:"type:text"` // JSON payload
-    EstimatedCost    float64    `gorm:"not null"`
-    Status           string     `gorm:"default:'pending'"` // pending, approved, denied
-    RequestedAt      time.Time
-    ApprovedAt       *time.Time
-    ApprovedBy       string
-    DeniedReason     string
+    ID             string     `gorm:"primaryKey"`
+    CompanyID      string     `gorm:"index;not null"`
+    EmployeeID     string     `gorm:"index;not null"`
+    ServiceType    string     `gorm:"not null"`
+    ServiceRequest string     `gorm:"type:text"`
+    EstimatedCost  float64    `gorm:"not null"`
+    Status         string     `gorm:"default:'pending'"`
+    RequestedAt    time.Time
+    ApprovedAt     *time.Time
+    ApprovedBy     string
+    DeniedReason   string
 }
 
-// B2BTransaction records company spending
 type B2BTransaction struct {
     ID          string    `gorm:"primaryKey"`
     CompanyID   string    `gorm:"index;not null"`
@@ -73,18 +69,17 @@ type B2BTransaction struct {
     ServiceType string    `gorm:"not null"`
     ServiceID   string    `gorm:"index;not null"`
     Amount      float64   `gorm:"not null"`
-    Status      string    `gorm:"default:'pending'"` // pending, settled
+    Status      string    `gorm:"default:'pending'"`
     CreatedAt   time.Time
     SettledAt   *time.Time
 }
 
-// B2BServer handles gRPC requests
 type B2BServer struct {
     pb.UnimplementedB2BServiceServer
     DB *gorm.DB
 }
 
-// RegisterCompany creates a new corporate account
+// RegisterCompany - Create a new corporate account
 func (s *B2BServer) RegisterCompany(ctx context.Context, req *pb.RegisterCompanyRequest) (*pb.CompanyResponse, error) {
     company := &Company{
         ID:             generateID(),
@@ -101,9 +96,8 @@ func (s *B2BServer) RegisterCompany(ctx context.Context, req *pb.RegisterCompany
         CreatedAt:      time.Now(),
         UpdatedAt:      time.Now(),
     }
-
     if err := s.DB.Create(company).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create company")
+        return nil, status.Error(codes.Internal, "failed to register company")
     }
 
     return &pb.CompanyResponse{
@@ -114,12 +108,11 @@ func (s *B2BServer) RegisterCompany(ctx context.Context, req *pb.RegisterCompany
     }, nil
 }
 
-// AddEmployee adds an employee to a company
+// AddEmployee - Add an employee to a company
 func (s *B2BServer) AddEmployee(ctx context.Context, req *pb.AddEmployeeRequest) (*pb.EmployeeResponse, error) {
-    // Check if employee already exists
     var existing Employee
     if err := s.DB.Where("user_id = ?", req.UserId).First(&existing).Error; err == nil {
-        return nil, status.Error(codes.AlreadyExists, "employee already added to a company")
+        return nil, status.Error(codes.AlreadyExists, "employee already added")
     }
 
     employee := &Employee{
@@ -133,7 +126,6 @@ func (s *B2BServer) AddEmployee(ctx context.Context, req *pb.AddEmployeeRequest)
         CreatedAt:     time.Now(),
         UpdatedAt:     time.Now(),
     }
-
     if err := s.DB.Create(employee).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to add employee")
     }
@@ -146,7 +138,7 @@ func (s *B2BServer) AddEmployee(ctx context.Context, req *pb.AddEmployeeRequest)
     }, nil
 }
 
-// ListEmployees returns all employees of a company
+// ListEmployees - List all employees of a company
 func (s *B2BServer) ListEmployees(ctx context.Context, req *pb.ListEmployeesRequest) (*pb.ListEmployeesResponse, error) {
     var employees []Employee
     if err := s.DB.Where("company_id = ?", req.CompanyId).Find(&employees).Error; err != nil {
@@ -166,7 +158,7 @@ func (s *B2BServer) ListEmployees(ctx context.Context, req *pb.ListEmployeesRequ
     return &pb.ListEmployeesResponse{Employees: pbEmployees}, nil
 }
 
-// RequestApproval creates an approval request for a service
+// RequestApproval - Create an approval request for a service
 func (s *B2BServer) RequestApproval(ctx context.Context, req *pb.RequestApprovalRequest) (*pb.ApprovalResponse, error) {
     approval := &ApprovalRequest{
         ID:             generateID(),
@@ -178,25 +170,22 @@ func (s *B2BServer) RequestApproval(ctx context.Context, req *pb.RequestApproval
         Status:         "pending",
         RequestedAt:    time.Now(),
     }
-
     if err := s.DB.Create(approval).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create approval request")
     }
 
-    // In production: send notification to managers
     return &pb.ApprovalResponse{
         ApprovalId: approval.ID,
         Status:     approval.Status,
     }, nil
 }
 
-// ApproveRequest approves a pending request
+// ApproveRequest - Approve a pending request
 func (s *B2BServer) ApproveRequest(ctx context.Context, req *pb.ApproveRequestRequest) (*pb.Empty, error) {
     var approval ApprovalRequest
     if err := s.DB.Where("id = ?", req.ApprovalId).First(&approval).Error; err != nil {
         return nil, status.Error(codes.NotFound, "approval request not found")
     }
-
     if approval.Status != "pending" {
         return nil, status.Error(codes.FailedPrecondition, "request already processed")
     }
@@ -205,37 +194,29 @@ func (s *B2BServer) ApproveRequest(ctx context.Context, req *pb.ApproveRequestRe
     approval.Status = "approved"
     approval.ApprovedAt = &now
     approval.ApprovedBy = req.ApprovedBy
+    s.DB.Save(&approval)
 
-    if err := s.DB.Save(&approval).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to approve request")
-    }
-
-    // In production: forward request to respective service (ride, food, etc.)
     return &pb.Empty{}, nil
 }
 
-// DenyRequest denies a pending request
+// DenyRequest - Deny a pending request
 func (s *B2BServer) DenyRequest(ctx context.Context, req *pb.DenyRequestRequest) (*pb.Empty, error) {
     var approval ApprovalRequest
     if err := s.DB.Where("id = ?", req.ApprovalId).First(&approval).Error; err != nil {
         return nil, status.Error(codes.NotFound, "approval request not found")
     }
-
     if approval.Status != "pending" {
         return nil, status.Error(codes.FailedPrecondition, "request already processed")
     }
 
     approval.Status = "denied"
     approval.DeniedReason = req.Reason
-
-    if err := s.DB.Save(&approval).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to deny request")
-    }
+    s.DB.Save(&approval)
 
     return &pb.Empty{}, nil
 }
 
-// AddWalletFunds adds funds to a company's wallet
+// AddWalletFunds - Add funds to company wallet
 func (s *B2BServer) AddWalletFunds(ctx context.Context, req *pb.AddFundsRequest) (*pb.BalanceResponse, error) {
     var company Company
     if err := s.DB.Where("id = ?", req.CompanyId).First(&company).Error; err != nil {
@@ -244,15 +225,12 @@ func (s *B2BServer) AddWalletFunds(ctx context.Context, req *pb.AddFundsRequest)
 
     company.WalletBalance += req.Amount
     company.UpdatedAt = time.Now()
-
-    if err := s.DB.Save(&company).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to add funds")
-    }
+    s.DB.Save(&company)
 
     return &pb.BalanceResponse{Balance: company.WalletBalance}, nil
 }
 
-// GetWalletBalance returns the current wallet balance
+// GetWalletBalance - Get company wallet balance
 func (s *B2BServer) GetWalletBalance(ctx context.Context, req *pb.GetBalanceRequest) (*pb.BalanceResponse, error) {
     var company Company
     if err := s.DB.Where("id = ?", req.CompanyId).First(&company).Error; err != nil {
@@ -262,7 +240,7 @@ func (s *B2BServer) GetWalletBalance(ctx context.Context, req *pb.GetBalanceRequ
     return &pb.BalanceResponse{Balance: company.WalletBalance}, nil
 }
 
-// CreateB2BRide creates a ride using company budget
+// CreateB2BRide - Create a ride using company budget
 func (s *B2BServer) CreateB2BRide(ctx context.Context, req *pb.B2BRideRequest) (*pb.B2BRideResponse, error) {
     var employee Employee
     if err := s.DB.Where("id = ?", req.EmployeeId).First(&employee).Error; err != nil {
@@ -274,15 +252,12 @@ func (s *B2BServer) CreateB2BRide(ctx context.Context, req *pb.B2BRideRequest) (
         return nil, status.Error(codes.NotFound, "company not found")
     }
 
-    // Check wallet balance
     if company.PaymentMethod == "wallet" && company.WalletBalance < req.EstimatedCost {
         return nil, status.Error(codes.ResourceExhausted, "insufficient wallet balance")
     }
 
-    // In production: call ride-service to create ride
     rideID := "ride_" + time.Now().Format("20060102150405")
 
-    // Record transaction
     tx := &B2BTransaction{
         ID:          generateID(),
         CompanyID:   employee.CompanyID,
@@ -295,7 +270,6 @@ func (s *B2BServer) CreateB2BRide(ctx context.Context, req *pb.B2BRideRequest) (
     }
     s.DB.Create(tx)
 
-    // Deduct wallet balance if using wallet
     if company.PaymentMethod == "wallet" {
         company.WalletBalance -= req.EstimatedCost
         s.DB.Save(&company)
@@ -312,7 +286,7 @@ func (s *B2BServer) CreateB2BRide(ctx context.Context, req *pb.B2BRideRequest) (
     }, nil
 }
 
-// GetCompanyTransactions returns all transactions for a company
+// GetCompanyTransactions - List all transactions for a company
 func (s *B2BServer) GetCompanyTransactions(ctx context.Context, req *pb.GetTransactionsRequest) (*pb.TransactionsList, error) {
     var transactions []B2BTransaction
     query := s.DB.Where("company_id = ?", req.CompanyId).Order("created_at DESC")
@@ -391,5 +365,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("B2B Service stopped")
 }
