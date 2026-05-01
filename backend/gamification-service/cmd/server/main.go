@@ -19,68 +19,60 @@ import (
     pb "github.com/uber-clone/gamification-service/proto"
 )
 
-// Challenge represents a driver challenge (e.g., "Complete 50 rides this weekend")
 type Challenge struct {
-    ID          string    `gorm:"primaryKey"`
-    Name        string    `gorm:"not null"`
-    Description string
-    ChallengeType string  `gorm:"not null"` // trip_count, rating, acceptance_rate
-    Goal        int       `gorm:"not null"` // e.g., 50 rides
-    BonusAmount float64   `gorm:"not null"`
-    StartDate   time.Time
-    EndDate     time.Time
-    ApplicableZones string `gorm:"type:text"` // JSON array of zones
-    IsActive    bool      `gorm:"default:true"`
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+    ID            string    `gorm:"primaryKey"`
+    Name          string    `gorm:"not null"`
+    Description   string
+    ChallengeType string    `gorm:"not null"` // trip_count, rating, acceptance_rate
+    Goal          int       `gorm:"not null"`
+    BonusAmount   float64   `gorm:"not null"`
+    StartDate     time.Time
+    EndDate       time.Time
+    IsActive      bool      `gorm:"default:true"`
+    CreatedAt     time.Time
+    UpdatedAt     time.Time
 }
 
-// DriverChallengeProgress tracks driver progress on challenges
 type DriverChallengeProgress struct {
-    ID          string    `gorm:"primaryKey"`
-    DriverID    string    `gorm:"index;not null"`
-    ChallengeID string    `gorm:"index;not null"`
-    Progress    int       `gorm:"default:0"` // current completed count
-    Completed   bool      `gorm:"default:false"`
+    ID          string     `gorm:"primaryKey"`
+    DriverID    string     `gorm:"index;not null"`
+    ChallengeID string     `gorm:"index;not null"`
+    Progress    int        `gorm:"default:0"`
+    Completed   bool       `gorm:"default:false"`
     CompletedAt *time.Time
     AwardedAt   *time.Time
     CreatedAt   time.Time
     UpdatedAt   time.Time
 }
 
-// LeaderboardEntry represents a driver's position on a leaderboard
 type LeaderboardEntry struct {
-    ID          string    `gorm:"primaryKey"`
-    Period      string    `gorm:"index"` // weekly, monthly
-    DriverID    string    `gorm:"index"`
-    DriverName  string
-    TotalTrips  int
+    ID            string    `gorm:"primaryKey"`
+    Period        string    `gorm:"index"`
+    DriverID      string    `gorm:"index"`
+    DriverName    string
+    TotalTrips    int
     TotalEarnings float64
     TotalRating   float64
-    Rank        int
-    CreatedAt   time.Time
-    UpdatedAt   time.Time
+    Rank          int
+    CreatedAt     time.Time
+    UpdatedAt     time.Time
 }
 
-// GamificationServer handles gRPC requests
 type GamificationServer struct {
     pb.UnimplementedGamificationServiceServer
     DB *gorm.DB
 }
 
-// ListActiveChallenges returns active challenges for a driver
+// ListActiveChallenges - List active challenges for a driver
 func (s *GamificationServer) ListActiveChallenges(ctx context.Context, req *pb.ListChallengesRequest) (*pb.ListChallengesResponse, error) {
     var challenges []Challenge
     now := time.Now()
-    query := s.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now)
-
-    if err := query.Find(&challenges).Error; err != nil {
+    if err := s.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&challenges).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to list challenges")
     }
 
     var pbChallenges []*pb.Challenge
     for _, c := range challenges {
-        // Get driver progress if available
         var progress DriverChallengeProgress
         s.DB.Where("driver_id = ? AND challenge_id = ?", req.DriverId, c.ID).First(&progress)
 
@@ -100,15 +92,13 @@ func (s *GamificationServer) ListActiveChallenges(ctx context.Context, req *pb.L
     return &pb.ListChallengesResponse{Challenges: pbChallenges}, nil
 }
 
-// GetLeaderboard returns driver leaderboard for a given period
+// GetLeaderboard - Get driver leaderboard
 func (s *GamificationServer) GetLeaderboard(ctx context.Context, req *pb.GetLeaderboardRequest) (*pb.LeaderboardResponse, error) {
     var entries []LeaderboardEntry
     query := s.DB.Where("period = ?", req.Period).Order("rank ASC")
-
     if req.Limit > 0 {
         query = query.Limit(int(req.Limit))
     }
-
     if err := query.Find(&entries).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to get leaderboard")
     }
@@ -127,7 +117,7 @@ func (s *GamificationServer) GetLeaderboard(ctx context.Context, req *pb.GetLead
     return &pb.LeaderboardResponse{Entries: pbEntries}, nil
 }
 
-// UpdateDriverProgress would be called by Kafka consumer on ride.completed events
+// UpdateDriverProgress - Update driver's challenge progress (Kafka consumer)
 func (s *GamificationServer) UpdateDriverProgress(ctx context.Context, req *pb.UpdateProgressRequest) (*pb.Empty, error) {
     var challenges []Challenge
     now := time.Now()
@@ -153,19 +143,11 @@ func (s *GamificationServer) UpdateDriverProgress(ctx context.Context, req *pb.U
             continue
         }
 
-        // Increment progress based on challenge type
-        if c.ChallengeType == "trip_count" {
-            progress.Progress++
-        } else if c.ChallengeType == "rating" && req.DriverRating > 0 {
-            // Complex logic; for MVP, simple increment
-            progress.Progress++
-        }
-
+        progress.Progress++
         if progress.Progress >= c.Goal {
             progress.Completed = true
             now := time.Now()
             progress.CompletedAt = &now
-            // In production: award bonus via payment service
             log.Printf("🏆 Driver %s completed challenge %s! Bonus: £%.2f", req.DriverId, c.ID, c.BonusAmount)
         }
         progress.UpdatedAt = time.Now()
@@ -175,7 +157,7 @@ func (s *GamificationServer) UpdateDriverProgress(ctx context.Context, req *pb.U
     return &pb.Empty{}, nil
 }
 
-// CreateChallenge (admin endpoint)
+// CreateChallenge - Create a new challenge (admin)
 func (s *GamificationServer) CreateChallenge(ctx context.Context, req *pb.CreateChallengeRequest) (*pb.Challenge, error) {
     challenge := &Challenge{
         ID:            generateID(),
@@ -190,7 +172,6 @@ func (s *GamificationServer) CreateChallenge(ctx context.Context, req *pb.Create
         CreatedAt:     time.Now(),
         UpdatedAt:     time.Now(),
     }
-
     if err := s.DB.Create(challenge).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to create challenge")
     }
@@ -206,7 +187,7 @@ func (s *GamificationServer) CreateChallenge(ctx context.Context, req *pb.Create
     }, nil
 }
 
-// GetDriverStats returns driver's gamification stats
+// GetDriverStats - Get driver's gamification stats
 func (s *GamificationServer) GetDriverStats(ctx context.Context, req *pb.GetDriverStatsRequest) (*pb.DriverStatsResponse, error) {
     var completedChallenges int64
     s.DB.Model(&DriverChallengeProgress{}).Where("driver_id = ? AND completed = ?", req.DriverId, true).Count(&completedChallenges)
@@ -288,5 +269,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Gamification Service stopped")
 }
