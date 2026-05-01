@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package bid;
+option go_package = "github.com/uber-clone/bid-service/proto";
+
+service BidService {
+    rpc CreateBidRequest(CreateBidRequestRequest) returns (BidRequestResponse);
+    rpc SubmitBid(SubmitBidRequest) returns (Empty);
+    rpc GetBidsForRequest(GetBidsRequest) returns (BidsList);
+    rpc AcceptBid(AcceptBidRequest) returns (Empty);
+    rpc GetOpenBidRequests(GetOpenBidRequestsRequest) returns (OpenBidRequestsResponse);
+    rpc GetBidRequestDetails(GetBidRequestDetailsRequest) returns (BidRequestDetailsResponse);
+}
+
+message CreateBidRequestRequest {
+    string rider_id = 1;
+    double pickup_lat = 2;
+    double pickup_lng = 3;
+    string pickup_address = 4;
+    double dropoff_lat = 5;
+    double dropoff_lng = 6;
+    string dropoff_address = 7;
+    int32 expires_in_seconds = 8;
+}
+
+message BidRequestResponse {
+    string request_id = 1;
+    string status = 2;
+    int64 expires_at = 3;
+}
+
+message SubmitBidRequest {
+    string request_id = 1;
+    string driver_id = 2;
+    double bid_amount = 3;
+}
+
+message GetBidsRequest {
+    string request_id = 1;
+}
+
+message DriverBid {
+    string bid_id = 1;
+    string driver_id = 2;
+    double bid_amount = 3;
+    int64 bid_time = 4;
+}
+
+message BidsList {
+    repeated DriverBid bids = 1;
+}
+
+message AcceptBidRequest {
+    string request_id = 1;
+    string bid_id = 2;
+}
+
+message GetOpenBidRequestsRequest {
+    double latitude = 1;
+    double longitude = 2;
+    int32 radius_km = 3;
+}
+
+message BidRequestSummary {
+    string request_id = 1;
+    double pickup_lat = 2;
+    double pickup_lng = 3;
+    string pickup_address = 4;
+    double dropoff_lat = 5;
+    double dropoff_lng = 6;
+    string dropoff_address = 7;
+    int64 expires_at = 8;
+}
+
+message OpenBidRequestsResponse {
+    repeated BidRequestSummary requests = 1;
+}
+
+message GetBidRequestDetailsRequest {
+    string request_id = 1;
+}
+
+message BidRequestDetailsResponse {
+    string request_id = 1;
+    string rider_id = 2;
+    double pickup_lat = 3;
+    double pickup_lng = 4;
+    string pickup_address = 5;
+    double dropoff_lat = 6;
+    double dropoff_lng = 7;
+    string dropoff_address = 8;
+    string status = 9;
+    int64 expires_at = 10;
+}
+
+message Empty {}
