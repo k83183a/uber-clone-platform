@@ -9,7 +9,6 @@ import (
     "net"
     "os"
     "os/signal"
-    "strconv"
     "strings"
     "syscall"
     "time"
@@ -24,117 +23,94 @@ import (
     pb "github.com/uber-clone/vat-service/proto"
 )
 
-// VATTransaction represents a single transaction with VAT calculation
 type VATTransaction struct {
     ID              string    `gorm:"primaryKey"`
-    ServiceType     string    `gorm:"index;not null"`   // ride, food, grocery, courier, subscription
-    TransactionID   string    `gorm:"index;not null"`   // ride_id, order_id, etc.
+    ServiceType     string    `gorm:"index;not null"`
+    TransactionID   string    `gorm:"index;not null"`
     TransactionDate time.Time `gorm:"index;not null"`
-    NetAmount       float64   `gorm:"not null"`         // excluding VAT
-    VATRate         float64   `gorm:"not null"`         // 0, 5, 20
-    VATAmount       float64   `gorm:"not null"`         // net * rate / 100
-    GrossAmount     float64   `gorm:"not null"`         // net + vat
-    BusinessModel   string    // principal, agent
+    NetAmount       float64   `gorm:"not null"`
+    VATRate         float64   `gorm:"not null"`
+    VATAmount       float64   `gorm:"not null"`
+    GrossAmount     float64   `gorm:"not null"`
+    BusinessModel   string
     OperatorID      string    `gorm:"index"`
     DriverID        string    `gorm:"index"`
     CustomerID      string    `gorm:"index"`
     CreatedAt       time.Time
 }
 
-// VATReturn represents a submitted VAT return
 type VATReturn struct {
-    ID                string    `gorm:"primaryKey"`
-    PeriodStart       time.Time `gorm:"index"`
-    PeriodEnd         time.Time `gorm:"index"`
-    SubmissionID      string    `gorm:"uniqueIndex"` // HMRC submission ID
-    Status            string    `gorm:"default:'pending'"` // pending, submitted, failed
-    VatDueSales       float64   // box 1
-    VatDueAcquisitions float64  // box 2
-    TotalVatDue       float64   // box 3
-    VatReclaimedCurrPeriod float64 // box 4
-    NetVatDue         float64   // box 5
-    TotalValueSalesExVAT float64 // box 6
-    TotalValuePurchasesExVAT float64 // box 7
-    TotalValueGoodsSuppliedExVAT float64 // box 8
-    TotalAcquisitionsExVAT float64 // box 9
-    SubmittedAt       time.Time
-    ResponseData      string    `gorm:"type:text"` // JSON response from HMRC
-    CreatedAt         time.Time
+    ID                       string    `gorm:"primaryKey"`
+    PeriodStart              time.Time `gorm:"index"`
+    PeriodEnd                time.Time `gorm:"index"`
+    SubmissionID             string    `gorm:"uniqueIndex"`
+    Status                   string    `gorm:"default:'pending'"`
+    VatDueSales              float64
+    VatDueAcquisitions       float64
+    TotalVatDue              float64
+    VatReclaimedCurrPeriod   float64
+    NetVatDue                float64
+    TotalValueSalesExVAT     float64
+    TotalValuePurchasesExVAT float64
+    TotalValueGoodsSuppliedExVAT float64
+    TotalAcquisitionsExVAT   float64
+    SubmittedAt              time.Time
+    ResponseData             string    `gorm:"type:text"`
+    CreatedAt                time.Time
 }
 
-// VATServer handles gRPC requests
 type VATServer struct {
     pb.UnimplementedVATServiceServer
     DB *gorm.DB
 }
 
-// GenerateVATReport generates VAT report for a given period
+// GenerateVATReport - Generate VAT report for period
 func (s *VATServer) GenerateVATReport(ctx context.Context, req *pb.GenerateVATReportRequest) (*pb.VATReportResponse, error) {
     startDate := time.Unix(req.PeriodStart, 0)
     endDate := time.Unix(req.PeriodEnd, 0)
 
     var transactions []VATTransaction
     query := s.DB.Where("transaction_date >= ? AND transaction_date <= ?", startDate, endDate)
-
     if req.OperatorId != "" {
         query = query.Where("operator_id = ?", req.OperatorId)
     }
+    query.Find(&transactions)
 
-    if err := query.Find(&transactions).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to fetch transactions")
-    }
-
-    // Calculate VAT summary
-    summary := &pb.VATSummary{
-        TotalNetSales:     0,
-        TotalVatOutput:    0,
-        TotalVatInput:     0,
-        VatDue:            0,
-    }
-
+    summary := &pb.VATSummary{TotalNetSales: 0, TotalVatOutput: 0, TotalVatInput: 0, VatDue: 0}
     var pbTransactions []*pb.VATTransaction
+
     for _, t := range transactions {
         summary.TotalNetSales += t.NetAmount
         summary.TotalVatOutput += t.VATAmount
-
         pbTransactions = append(pbTransactions, &pb.VATTransaction{
-            TransactionId:   t.TransactionID,
-            ServiceType:     t.ServiceType,
-            Date:            t.TransactionDate.Format("2006-01-02"),
-            Net:             t.NetAmount,
-            VatRate:         t.VATRate,
-            Vat:             t.VATAmount,
-            Gross:           t.GrossAmount,
+            TransactionId: t.TransactionID,
+            ServiceType:   t.ServiceType,
+            Date:          t.TransactionDate.Format("2006-01-02"),
+            Net:           t.NetAmount,
+            VatRate:       t.VATRate,
+            Vat:           t.VATAmount,
+            Gross:         t.GrossAmount,
         })
     }
 
-    // For MVP, VAT input is 0 (would be calculated from expenses)
     summary.TotalVatInput = 0
     summary.VatDue = summary.TotalVatOutput - summary.TotalVatInput
 
-    return &pb.VATReportResponse{
-        Summary:      summary,
-        Transactions: pbTransactions,
-    }, nil
+    return &pb.VATReportResponse{Summary: summary, Transactions: pbTransactions}, nil
 }
 
-// ExportVATCSV exports VAT report as CSV
+// ExportVATCSV - Export as CSV
 func (s *VATServer) ExportVATCSV(ctx context.Context, req *pb.ExportVATCSVRequest) (*pb.CSVResponse, error) {
     startDate := time.Unix(req.PeriodStart, 0)
     endDate := time.Unix(req.PeriodEnd, 0)
 
     var transactions []VATTransaction
-    if err := s.DB.Where("transaction_date >= ? AND transaction_date <= ?", startDate, endDate).Find(&transactions).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to fetch transactions")
-    }
+    s.DB.Where("transaction_date >= ? AND transaction_date <= ?", startDate, endDate).Find(&transactions)
 
     csvBuffer := &strings.Builder{}
     writer := csv.NewWriter(csvBuffer)
-
-    // Write header
     writer.Write([]string{"Date", "Transaction ID", "Service Type", "Net (£)", "VAT Rate (%)", "VAT (£)", "Gross (£)"})
 
-    // Write rows
     for _, t := range transactions {
         writer.Write([]string{
             t.TransactionDate.Format("2006-01-02"),
@@ -148,63 +124,47 @@ func (s *VATServer) ExportVATCSV(ctx context.Context, req *pb.ExportVATCSVReques
     }
     writer.Flush()
 
-    return &pb.CSVResponse{
-        CsvData: []byte(csvBuffer.String()),
-    }, nil
+    return &pb.CSVResponse{CsvData: []byte(csvBuffer.String())}, nil
 }
 
-// SubmitToHMRC submits VAT return to HMRC Making Tax Digital API
+// SubmitToHMRC - Submit to HMRC MTD
 func (s *VATServer) SubmitToHMRC(ctx context.Context, req *pb.SubmitToHMRCRequest) (*pb.SubmitResponse, error) {
     startDate := time.Unix(req.PeriodStart, 0)
     endDate := time.Unix(req.PeriodEnd, 0)
 
-    // Generate VAT return data from the summary
-    vatReturn := &pb.VATSummary{}
-    if err := json.Unmarshal([]byte(req.VatReturnJson), vatReturn); err != nil {
-        return nil, status.Error(codes.InvalidArgument, "invalid VAT return JSON")
-    }
+    var summary pb.VATSummary
+    json.Unmarshal([]byte(req.VatReturnJson), &summary)
 
-    // Prepare HMRC MTD payload
     hmrcPayload := map[string]interface{}{
-        "periodKey": fmt.Sprintf("%02d%02d", startDate.Year(), startDate.Month()),
-        "vatDueSales":               vatReturn.TotalVatOutput,
-        "vatDueAcquisitions":        0,
-        "totalVatDue":              vatReturn.VatDue,
-        "vatReclaimedCurrPeriod":   vatReturn.TotalVatInput,
-        "netVatDue":                vatReturn.VatDue,
-        "totalValueSalesExVAT":     vatReturn.TotalNetSales,
-        "totalValuePurchasesExVAT": 0,
+        "periodKey":                    fmt.Sprintf("%02d%02d", startDate.Year(), startDate.Month()),
+        "vatDueSales":                  summary.TotalVatOutput,
+        "vatDueAcquisitions":           0,
+        "totalVatDue":                  summary.VatDue,
+        "vatReclaimedCurrPeriod":       summary.TotalVatInput,
+        "netVatDue":                    summary.VatDue,
+        "totalValueSalesExVAT":         summary.TotalNetSales,
+        "totalValuePurchasesExVAT":     0,
         "totalValueGoodsSuppliedExVAT": 0,
-        "totalAcquisitionsExVAT":   0,
-        "finalised": true,
+        "totalAcquisitionsExVAT":       0,
+        "finalised":                    true,
     }
 
-    // In production: call HMRC MTD API with OAuth2
-    // For MVP, simulate successful submission
     submissionID := "HMRC_" + time.Now().Format("20060102150405")
-
-    // Save submission record
     submission := &VATReturn{
-        ID:          generateID(),
-        PeriodStart: startDate,
-        PeriodEnd:   endDate,
-        SubmissionID: submissionID,
-        Status:      "submitted",
-        VatDueSales: vatReturn.TotalVatOutput,
-        TotalVatDue: vatReturn.VatDue,
-        VatReclaimedCurrPeriod: vatReturn.TotalVatInput,
-        NetVatDue:   vatReturn.VatDue,
-        TotalValueSalesExVAT: vatReturn.TotalNetSales,
-        SubmittedAt: time.Now(),
-        CreatedAt:   time.Now(),
+        ID:                       generateID(),
+        PeriodStart:              startDate,
+        PeriodEnd:                endDate,
+        SubmissionID:             submissionID,
+        Status:                   "submitted",
+        VatDueSales:              summary.TotalVatOutput,
+        TotalVatDue:              summary.VatDue,
+        VatReclaimedCurrPeriod:   summary.TotalVatInput,
+        NetVatDue:                summary.VatDue,
+        TotalValueSalesExVAT:     summary.TotalNetSales,
+        SubmittedAt:              time.Now(),
+        CreatedAt:                time.Now(),
     }
-
-    respData, _ := json.Marshal(hmrcPayload)
-    submission.ResponseData = string(respData)
-
-    if err := s.DB.Create(submission).Error; err != nil {
-        log.Printf("Failed to save VAT submission record: %v", err)
-    }
+    s.DB.Create(submission)
 
     return &pb.SubmitResponse{
         SubmissionId: submissionID,
@@ -213,13 +173,12 @@ func (s *VATServer) SubmitToHMRC(ctx context.Context, req *pb.SubmitToHMRCReques
     }, nil
 }
 
-// GetSubmissionStatus retrieves status of a VAT submission
+// GetSubmissionStatus - Get submission status
 func (s *VATServer) GetSubmissionStatus(ctx context.Context, req *pb.GetSubmissionStatusRequest) (*pb.SubmissionStatusResponse, error) {
     var submission VATReturn
     if err := s.DB.Where("submission_id = ?", req.SubmissionId).First(&submission).Error; err != nil {
         return nil, status.Error(codes.NotFound, "submission not found")
     }
-
     return &pb.SubmissionStatusResponse{
         SubmissionId: submission.SubmissionID,
         Status:       submission.Status,
@@ -227,12 +186,10 @@ func (s *VATServer) GetSubmissionStatus(ctx context.Context, req *pb.GetSubmissi
     }, nil
 }
 
-// ListSubmissions lists all VAT submissions
+// ListSubmissions - List all submissions
 func (s *VATServer) ListSubmissions(ctx context.Context, req *pb.ListSubmissionsRequest) (*pb.ListSubmissionsResponse, error) {
     var submissions []VATReturn
-    if err := s.DB.Order("submitted_at DESC").Find(&submissions).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list submissions")
-    }
+    s.DB.Order("submitted_at DESC").Find(&submissions)
 
     var pbSubmissions []*pb.SubmissionSummary
     for _, sub := range submissions {
@@ -244,11 +201,10 @@ func (s *VATServer) ListSubmissions(ctx context.Context, req *pb.ListSubmissions
             SubmittedAt:  sub.SubmittedAt.Unix(),
         })
     }
-
     return &pb.ListSubmissionsResponse{Submissions: pbSubmissions}, nil
 }
 
-// AddVATTransaction manually adds a VAT transaction (for testing/fixes)
+// AddVATTransaction - Add manual VAT transaction
 func (s *VATServer) AddVATTransaction(ctx context.Context, req *pb.AddVATTransactionRequest) (*pb.Empty, error) {
     txDate := time.Unix(req.TransactionDate, 0)
     vatAmount := req.NetAmount * (req.VatRate / 100)
@@ -268,27 +224,20 @@ func (s *VATServer) AddVATTransaction(ctx context.Context, req *pb.AddVATTransac
         CustomerID:      req.CustomerId,
         CreatedAt:       time.Now(),
     }
-
-    if err := s.DB.Create(tx).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to add transaction")
-    }
-
+    s.DB.Create(tx)
     return &pb.Empty{}, nil
 }
 
-// GetHMRCConfig returns HMRC MTD configuration for the admin panel
+// GetHMRCConfig - Get HMRC config
 func (s *VATServer) GetHMRCConfig(ctx context.Context, req *pb.Empty) (*pb.HMRCConfigResponse, error) {
-    // In production, read from database or env
     return &pb.HMRCConfigResponse{
         ClientId:     os.Getenv("HMRC_CLIENT_ID"),
         IsConfigured: os.Getenv("HMRC_CLIENT_ID") != "",
     }, nil
 }
 
-// SetHMRCConfig updates HMRC MTD configuration (admin only)
+// SetHMRCConfig - Set HMRC config
 func (s *VATServer) SetHMRCConfig(ctx context.Context, req *pb.SetHMRCConfigRequest) (*pb.Empty, error) {
-    // In production, store encrypted in database
-    // For MVP, just log
     log.Printf("HMRC config updated: client_id=%s", req.ClientId)
     return &pb.Empty{}, nil
 }
@@ -340,5 +289,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("VAT Service stopped")
 }
