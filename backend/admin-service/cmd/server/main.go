@@ -2,7 +2,6 @@ package main
 
 import (
     "context"
-    "encoding/json"
     "log"
     "net"
     "os"
@@ -20,20 +19,18 @@ import (
     pb "github.com/uber-clone/admin-service/proto"
 )
 
-// AdminUser represents an admin user with roles
 type AdminUser struct {
-    ID        string    `gorm:"primaryKey"`
-    Email     string    `gorm:"uniqueIndex;not null"`
-    Password  string    `gorm:"not null"`
+    ID        string     `gorm:"primaryKey"`
+    Email     string     `gorm:"uniqueIndex;not null"`
+    Password  string     `gorm:"not null"`
     FullName  string
-    Role      string    `gorm:"default:'viewer'"` // super_admin, admin, viewer, finance
-    IsActive  bool      `gorm:"default:true"`
+    Role      string     `gorm:"default:'viewer'"`
+    IsActive  bool       `gorm:"default:true"`
     LastLogin *time.Time
     CreatedAt time.Time
     UpdatedAt time.Time
 }
 
-// AdminAuditLog tracks admin actions
 type AdminAuditLog struct {
     ID          string    `gorm:"primaryKey"`
     AdminID     string    `gorm:"index"`
@@ -45,20 +42,17 @@ type AdminAuditLog struct {
     CreatedAt   time.Time
 }
 
-// AdminServer handles gRPC requests
 type AdminServer struct {
     pb.UnimplementedAdminServiceServer
     DB *gorm.DB
 }
 
-// Login authenticates an admin user
+// Login - Admin login
 func (s *AdminServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
     var admin AdminUser
     if err := s.DB.Where("email = ? AND is_active = ?", req.Email, true).First(&admin).Error; err != nil {
         return nil, status.Error(codes.Unauthenticated, "invalid credentials")
     }
-
-    // In production: compare hashed password
     if req.Password != admin.Password {
         return nil, status.Error(codes.Unauthenticated, "invalid credentials")
     }
@@ -67,10 +61,7 @@ func (s *AdminServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Logi
     admin.LastLogin = &now
     s.DB.Save(&admin)
 
-    // Generate JWT token (in production)
     token := generateAdminToken(admin.ID, admin.Role)
-
-    // Log action
     s.logAction(admin.ID, "login", "admin", admin.ID, "Admin logged in", req.IpAddress)
 
     return &pb.LoginResponse{
@@ -82,97 +73,71 @@ func (s *AdminServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.Logi
     }, nil
 }
 
-// ListUsers lists all platform users (riders, drivers, stores)
+// ListUsers - List platform users
 func (s *AdminServer) ListUsers(ctx context.Context, req *pb.ListUsersRequest) (*pb.ListUsersResponse, error) {
-    // In production, you would call user-service gRPC to get users
-    // For MVP, return placeholder
-    return &pb.ListUsersResponse{
-        Users: []*pb.UserInfo{},
-        Total: 0,
-    }, nil
+    // In production: call user-service
+    return &pb.ListUsersResponse{Users: []*pb.UserInfo{}, Total: 0}, nil
 }
 
-// GetUserDetails gets detailed user information
+// GetUserDetails - Get user details
 func (s *AdminServer) GetUserDetails(ctx context.Context, req *pb.GetUserDetailsRequest) (*pb.UserDetailsResponse, error) {
-    // Call user-service to get user details
-    return &pb.UserDetailsResponse{
-        UserId: req.UserId,
-    }, nil
+    return &pb.UserDetailsResponse{UserId: req.UserId}, nil
 }
 
-// SuspendUser suspends a user account
+// SuspendUser - Suspend user
 func (s *AdminServer) SuspendUser(ctx context.Context, req *pb.SuspendUserRequest) (*pb.Empty, error) {
-    // In production: call user-service to suspend user
-    // Log action
     s.logAction(req.AdminId, "suspend_user", "user", req.UserId, req.Reason, "")
     return &pb.Empty{}, nil
 }
 
-// ListDrivers lists all drivers with status
+// ListDrivers - List drivers
 func (s *AdminServer) ListDrivers(ctx context.Context, req *pb.ListDriversRequest) (*pb.ListDriversResponse, error) {
-    // Call driver-service
-    return &pb.ListDriversResponse{
-        Drivers: []*pb.DriverInfo{},
-        Total:   0,
-    }, nil
+    return &pb.ListDriversResponse{Drivers: []*pb.DriverInfo{}, Total: 0}, nil
 }
 
-// ApproveDriver approves a driver application
+// ApproveDriver - Approve driver
 func (s *AdminServer) ApproveDriver(ctx context.Context, req *pb.ApproveDriverRequest) (*pb.Empty, error) {
-    // Call driver-service to approve driver
     s.logAction(req.AdminId, "approve_driver", "driver", req.DriverId, "", "")
     return &pb.Empty{}, nil
 }
 
-// RejectDriver rejects a driver application
+// RejectDriver - Reject driver
 func (s *AdminServer) RejectDriver(ctx context.Context, req *pb.RejectDriverRequest) (*pb.Empty, error) {
     s.logAction(req.AdminId, "reject_driver", "driver", req.DriverId, req.Reason, "")
     return &pb.Empty{}, nil
 }
 
-// BulkSuspendDrivers suspends multiple drivers at once
+// BulkSuspendDrivers - Bulk suspend drivers
 func (s *AdminServer) BulkSuspendDrivers(ctx context.Context, req *pb.BulkSuspendDriversRequest) (*pb.BulkOperationResponse, error) {
     for _, driverId := range req.DriverIds {
-        // Call driver-service to suspend each driver
         s.logAction(req.AdminId, "bulk_suspend_driver", "driver", driverId, req.Reason, "")
     }
-    return &pb.BulkOperationResponse{
-        SuccessCount: int32(len(req.DriverIds)),
-        FailedCount:  0,
-    }, nil
+    return &pb.BulkOperationResponse{SuccessCount: int32(len(req.DriverIds)), FailedCount: 0}, nil
 }
 
-// ListStores lists all stores (food, grocery, dark stores)
+// ListStores - List stores
 func (s *AdminServer) ListStores(ctx context.Context, req *pb.ListStoresRequest) (*pb.ListStoresResponse, error) {
-    return &pb.ListStoresResponse{
-        Stores: []*pb.StoreInfo{},
-        Total:  0,
-    }, nil
+    return &pb.ListStoresResponse{Stores: []*pb.StoreInfo{}, Total: 0}, nil
 }
 
-// GetDashboardStats returns dashboard statistics
+// GetDashboardStats - Get dashboard stats
 func (s *AdminServer) GetDashboardStats(ctx context.Context, req *pb.Empty) (*pb.DashboardStatsResponse, error) {
-    // In production: aggregate from various services
     return &pb.DashboardStatsResponse{
-        TotalUsers:      12500,
-        TotalDrivers:    3200,
-        TotalRidesToday: 1450,
+        TotalUsers:       12500,
+        TotalDrivers:     3200,
+        TotalRidesToday:  1450,
         TotalRevenueToday: 28750.50,
-        ActiveDrivers:   185,
-        PendingDrivers:  42,
+        ActiveDrivers:    185,
+        PendingDrivers:   42,
     }, nil
 }
 
-// GetRevenueReport returns revenue data for charts
+// GetRevenueReport - Get revenue report
 func (s *AdminServer) GetRevenueReport(ctx context.Context, req *pb.GetRevenueReportRequest) (*pb.RevenueReportResponse, error) {
-    // In production: query reporting-service or ClickHouse
-    return &pb.RevenueReportResponse{
-        DailyRevenue: []*pb.DailyRevenue{},
-        TotalRevenue: 0,
-    }, nil
+    return &pb.RevenueReportResponse{DailyRevenue: []*pb.DailyRevenue{}, TotalRevenue: 0}, nil
 }
 
-// GetRideStats returns ride statistics
+// GetRideStats - Get ride stats
 func (s *AdminServer) GetRideStats(ctx context.Context, req *pb.GetRideStatsRequest) (*pb.RideStatsResponse, error) {
     return &pb.RideStatsResponse{
         TotalRides:      50000,
@@ -182,41 +147,27 @@ func (s *AdminServer) GetRideStats(ctx context.Context, req *pb.GetRideStatsRequ
     }, nil
 }
 
-// CreateAdmin creates a new admin user
+// CreateAdmin - Create admin user
 func (s *AdminServer) CreateAdmin(ctx context.Context, req *pb.CreateAdminRequest) (*pb.AdminResponse, error) {
     admin := &AdminUser{
         ID:        generateID(),
         Email:     req.Email,
-        Password:  req.Password, // In production: hash password
+        Password:  req.Password,
         FullName:  req.FullName,
         Role:      req.Role,
         IsActive:  true,
         CreatedAt: time.Now(),
         UpdatedAt: time.Now(),
     }
-
-    if err := s.DB.Create(admin).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create admin")
-    }
-
+    s.DB.Create(admin)
     s.logAction(req.CreatedBy, "create_admin", "admin", admin.ID, "Created admin "+admin.Email, "")
-
-    return &pb.AdminResponse{
-        Id:       admin.ID,
-        Email:    admin.Email,
-        FullName: admin.FullName,
-        Role:     admin.Role,
-        IsActive: admin.IsActive,
-    }, nil
+    return &pb.AdminResponse{Id: admin.ID, Email: admin.Email, FullName: admin.FullName, Role: admin.Role, IsActive: admin.IsActive}, nil
 }
 
-// ListAdmins lists all admin users
+// ListAdmins - List admin users
 func (s *AdminServer) ListAdmins(ctx context.Context, req *pb.ListAdminsRequest) (*pb.ListAdminsResponse, error) {
     var admins []AdminUser
-    if err := s.DB.Find(&admins).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list admins")
-    }
-
+    s.DB.Find(&admins)
     var pbAdmins []*pb.AdminResponse
     for _, a := range admins {
         pbAdmins = append(pbAdmins, &pb.AdminResponse{
@@ -227,17 +178,15 @@ func (s *AdminServer) ListAdmins(ctx context.Context, req *pb.ListAdminsRequest)
             IsActive: a.IsActive,
         })
     }
-
     return &pb.ListAdminsResponse{Admins: pbAdmins}, nil
 }
 
-// UpdateAdmin updates an admin user
+// UpdateAdmin - Update admin
 func (s *AdminServer) UpdateAdmin(ctx context.Context, req *pb.UpdateAdminRequest) (*pb.AdminResponse, error) {
     var admin AdminUser
     if err := s.DB.Where("id = ?", req.AdminId).First(&admin).Error; err != nil {
         return nil, status.Error(codes.NotFound, "admin not found")
     }
-
     if req.FullName != "" {
         admin.FullName = req.FullName
     }
@@ -248,65 +197,47 @@ func (s *AdminServer) UpdateAdmin(ctx context.Context, req *pb.UpdateAdminReques
         admin.Password = req.Password
     }
     admin.UpdatedAt = time.Now()
-
-    if err := s.DB.Save(&admin).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to update admin")
-    }
-
-    return &pb.AdminResponse{
-        Id:       admin.ID,
-        Email:    admin.Email,
-        FullName: admin.FullName,
-        Role:     admin.Role,
-        IsActive: admin.IsActive,
-    }, nil
+    s.DB.Save(&admin)
+    return &pb.AdminResponse{Id: admin.ID, Email: admin.Email, FullName: admin.FullName, Role: admin.Role, IsActive: admin.IsActive}, nil
 }
 
-// DeleteAdmin deletes an admin user
+// DeleteAdmin - Delete admin
 func (s *AdminServer) DeleteAdmin(ctx context.Context, req *pb.DeleteAdminRequest) (*pb.Empty, error) {
-    if err := s.DB.Where("id = ?", req.AdminId).Delete(&AdminUser{}).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to delete admin")
-    }
+    s.DB.Where("id = ?", req.AdminId).Delete(&AdminUser{})
     return &pb.Empty{}, nil
 }
 
-// GetAuditLogs returns admin action logs
+// GetAuditLogs - Get audit logs
 func (s *AdminServer) GetAuditLogs(ctx context.Context, req *pb.GetAuditLogsRequest) (*pb.AuditLogsResponse, error) {
     var logs []AdminAuditLog
     query := s.DB.Order("created_at DESC")
-
     if req.AdminId != "" {
         query = query.Where("admin_id = ?", req.AdminId)
     }
     if req.Action != "" {
         query = query.Where("action = ?", req.Action)
     }
-
     offset := (req.Page - 1) * req.PageSize
-    if err := query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&logs).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to get audit logs")
-    }
-
-    var pbLogs []*pb.AuditLog
-    for _, l := range logs {
-        pbLogs = append(pbLogs, &pb.AuditLog{
-            Id:        l.ID,
-            AdminId:   l.AdminID,
-            Action:    l.Action,
-            Resource:  l.Resource,
-            ResourceId: l.ResourceID,
-            Details:   l.Details,
-            CreatedAt: l.CreatedAt.Unix(),
-        })
-    }
+    query.Offset(int(offset)).Limit(int(req.PageSize)).Find(&logs)
 
     var total int64
     s.DB.Model(&AdminAuditLog{}).Count(&total)
 
+    var pbLogs []*pb.AuditLog
+    for _, l := range logs {
+        pbLogs = append(pbLogs, &pb.AuditLog{
+            Id:         l.ID,
+            AdminId:    l.AdminID,
+            Action:     l.Action,
+            Resource:   l.Resource,
+            ResourceId: l.ResourceID,
+            Details:    l.Details,
+            CreatedAt:  l.CreatedAt.Unix(),
+        })
+    }
     return &pb.AuditLogsResponse{Logs: pbLogs, Total: int32(total)}, nil
 }
 
-// logAction records an admin action
 func (s *AdminServer) logAction(adminID, action, resource, resourceID, details, ipAddress string) {
     log := &AdminAuditLog{
         ID:        generateID(),
@@ -326,7 +257,6 @@ func generateID() string {
 }
 
 func generateAdminToken(adminID, role string) string {
-    // In production: generate JWT token
     return "admin_token_" + adminID + "_" + role
 }
 
@@ -354,14 +284,14 @@ func main() {
 
     db.AutoMigrate(&AdminUser{}, &AdminAuditLog{})
 
-    // Seed default super admin
+    // Seed default admin
     var count int64
     db.Model(&AdminUser{}).Count(&count)
     if count == 0 {
         admin := &AdminUser{
             ID:        generateID(),
             Email:     "admin@prosser.com",
-            Password:  "admin123", // Change in production!
+            Password:  "admin123",
             FullName:  "Super Admin",
             Role:      "super_admin",
             IsActive:  true,
@@ -391,5 +321,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Admin Service stopped")
 }
