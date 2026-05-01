@@ -6,6 +6,7 @@ import (
     "net"
     "os"
     "os/signal"
+    "strings"
     "syscall"
     "time"
 
@@ -19,97 +20,89 @@ import (
     pb "github.com/uber-clone/onboarding-service/proto"
 )
 
-// OnboardingSession represents a driver's onboarding journey
 type OnboardingSession struct {
-    ID              string    `gorm:"primaryKey"`
-    DriverID        string    `gorm:"uniqueIndex;not null"`
-    UserID          string    `gorm:"index;not null"`
-    Email           string
-    Phone           string
-    ReferralCode    string    `gorm:"index"`
-    ReferredBy      string
-    CurrentStep     int       `gorm:"default:1"`
-    StepsCompleted  string    `gorm:"type:text"` // JSON array of completed steps
-    Status          string    `gorm:"default:'in_progress'"` // in_progress, completed, abandoned
-    DocumentStatus  string    `gorm:"default:'pending'"`
-    BackgroundStatus string   `gorm:"default:'pending'"`
-    TrainingStatus  string    `gorm:"default:'pending'"`
-    PaymentStatus   string    `gorm:"default:'pending'"`
-    AdminApproved   bool      `gorm:"default:false"`
-    AdminReviewedBy string
-    AdminReviewedAt *time.Time
-    CompletedAt     *time.Time
-    CreatedAt       time.Time
-    UpdatedAt       time.Time
+    ID               string     `gorm:"primaryKey"`
+    DriverID         string     `gorm:"uniqueIndex;not null"`
+    UserID           string     `gorm:"index;not null"`
+    Email            string
+    Phone            string
+    ReferralCode     string     `gorm:"index"`
+    ReferredBy       string
+    CurrentStep      int        `gorm:"default:1"`
+    StepsCompleted   string     `gorm:"type:text"`
+    Status           string     `gorm:"default:'in_progress'"`
+    DocumentStatus   string     `gorm:"default:'pending'"`
+    BackgroundStatus string     `gorm:"default:'pending'"`
+    TrainingStatus   string     `gorm:"default:'pending'"`
+    PaymentStatus    string     `gorm:"default:'pending'"`
+    AdminApproved    bool       `gorm:"default:false"`
+    AdminReviewedBy  string
+    AdminReviewedAt  *time.Time
+    CompletedAt      *time.Time
+    CreatedAt        time.Time
+    UpdatedAt        time.Time
 }
 
-// OnboardingStep tracks step completion
 type OnboardingStep struct {
-    ID          string    `gorm:"primaryKey"`
-    SessionID   string    `gorm:"index;not null"`
-    StepNumber  int       `gorm:"not null"`
-    StepName    string    `gorm:"not null"`
-    Completed   bool      `gorm:"default:false"`
+    ID          string     `gorm:"primaryKey"`
+    SessionID   string     `gorm:"index;not null"`
+    StepNumber  int        `gorm:"not null"`
+    StepName    string     `gorm:"not null"`
+    Completed   bool       `gorm:"default:false"`
     CompletedAt *time.Time
-    Data        string    `gorm:"type:text"` // JSON step data
+    Data        string     `gorm:"type:text"`
     CreatedAt   time.Time
     UpdatedAt   time.Time
 }
 
-// OnboardingServer handles gRPC requests
 type OnboardingServer struct {
     pb.UnimplementedOnboardingServiceServer
     DB *gorm.DB
 }
 
-// StartOnboarding initiates the onboarding process for a driver
+// StartOnboarding - Begin onboarding process
 func (s *OnboardingServer) StartOnboarding(ctx context.Context, req *pb.StartOnboardingRequest) (*pb.StartOnboardingResponse, error) {
-    // Check if session already exists
     var existing OnboardingSession
     if err := s.DB.Where("user_id = ?", req.UserId).First(&existing).Error; err == nil {
         return &pb.StartOnboardingResponse{
-            SessionId:     existing.ID,
-            CurrentStep:   int32(existing.CurrentStep),
-            Status:        existing.Status,
-            ReferralCode:  existing.ReferralCode,
+            SessionId:    existing.ID,
+            CurrentStep:  int32(existing.CurrentStep),
+            Status:       existing.Status,
+            ReferralCode: existing.ReferralCode,
         }, nil
     }
 
-    // Generate referral code
     referralCode := generateReferralCode(req.FullName)
-
     session := &OnboardingSession{
-        ID:             generateID(),
-        DriverID:       generateDriverID(),
-        UserID:         req.UserId,
-        Email:          req.Email,
-        Phone:          req.Phone,
-        ReferralCode:   referralCode,
-        ReferredBy:     req.ReferredBy,
-        CurrentStep:    1,
-        StepsCompleted: "[]",
-        Status:         "in_progress",
-        DocumentStatus: "pending",
+        ID:               generateID(),
+        DriverID:         generateDriverID(),
+        UserID:           req.UserId,
+        Email:            req.Email,
+        Phone:            req.Phone,
+        ReferralCode:     referralCode,
+        ReferredBy:       req.ReferredBy,
+        CurrentStep:      1,
+        StepsCompleted:   "[]",
+        Status:           "in_progress",
+        DocumentStatus:   "pending",
         BackgroundStatus: "pending",
-        TrainingStatus: "pending",
-        PaymentStatus:  "pending",
-        AdminApproved:  false,
-        CreatedAt:      time.Now(),
-        UpdatedAt:      time.Now(),
+        TrainingStatus:   "pending",
+        PaymentStatus:    "pending",
+        AdminApproved:    false,
+        CreatedAt:        time.Now(),
+        UpdatedAt:        time.Now(),
     }
-
     if err := s.DB.Create(session).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to start onboarding")
     }
 
-    // Create first step
     step := &OnboardingStep{
         ID:         generateID(),
         SessionID:  session.ID,
         StepNumber: 1,
         StepName:   "account_creation",
         Completed:  true,
-        CompletedAt: &time.Now{},
+        CompletedAt: &time.Time{},
         CreatedAt:  time.Now(),
         UpdatedAt:  time.Now(),
     }
@@ -123,20 +116,15 @@ func (s *OnboardingServer) StartOnboarding(ctx context.Context, req *pb.StartOnb
     }, nil
 }
 
-// GetOnboardingStatus returns the current onboarding status
+// GetOnboardingStatus - Get status
 func (s *OnboardingServer) GetOnboardingStatus(ctx context.Context, req *pb.GetOnboardingStatusRequest) (*pb.OnboardingStatusResponse, error) {
     var session OnboardingSession
-    query := s.DB
     if req.SessionId != "" {
-        query = query.Where("id = ?", req.SessionId)
+        s.DB.Where("id = ?", req.SessionId).First(&session)
     } else if req.UserId != "" {
-        query = query.Where("user_id = ?", req.UserId)
+        s.DB.Where("user_id = ?", req.UserId).First(&session)
     } else {
         return nil, status.Error(codes.InvalidArgument, "session_id or user_id required")
-    }
-
-    if err := query.First(&session).Error; err != nil {
-        return nil, status.Error(codes.NotFound, "onboarding session not found")
     }
 
     var steps []OnboardingStep
@@ -153,32 +141,29 @@ func (s *OnboardingServer) GetOnboardingStatus(ctx context.Context, req *pb.GetO
     }
 
     return &pb.OnboardingStatusResponse{
-        SessionId:       session.ID,
-        DriverId:        session.DriverID,
-        CurrentStep:     int32(session.CurrentStep),
-        Status:          session.Status,
-        Steps:           stepStatuses,
-        DocumentStatus:  session.DocumentStatus,
+        SessionId:        session.ID,
+        DriverId:         session.DriverID,
+        CurrentStep:      int32(session.CurrentStep),
+        Status:           session.Status,
+        Steps:            stepStatuses,
+        DocumentStatus:   session.DocumentStatus,
         BackgroundStatus: session.BackgroundStatus,
-        TrainingStatus:  session.TrainingStatus,
-        PaymentStatus:   session.PaymentStatus,
-        AdminApproved:   session.AdminApproved,
+        TrainingStatus:   session.TrainingStatus,
+        PaymentStatus:    session.PaymentStatus,
+        AdminApproved:    session.AdminApproved,
     }, nil
 }
 
-// CompleteStep marks a step as completed
+// CompleteStep - Mark step completed
 func (s *OnboardingServer) CompleteStep(ctx context.Context, req *pb.CompleteStepRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
         return nil, status.Error(codes.NotFound, "session not found")
     }
 
-    // Check if step already completed
     var existingStep OnboardingStep
-    if err := s.DB.Where("session_id = ? AND step_number = ?", req.SessionId, req.StepNumber).First(&existingStep).Error; err == nil {
-        if existingStep.Completed {
-            return &pb.Empty{}, nil
-        }
+    if err := s.DB.Where("session_id = ? AND step_number = ?", req.SessionId, req.StepNumber).First(&existingStep).Error; err == nil && existingStep.Completed {
+        return &pb.Empty{}, nil
     }
 
     now := time.Now()
@@ -195,86 +180,64 @@ func (s *OnboardingServer) CompleteStep(ctx context.Context, req *pb.CompleteSte
     }
     s.DB.Create(step)
 
-    // Update session current step
     if int(req.StepNumber) >= session.CurrentStep {
         session.CurrentStep = int(req.StepNumber) + 1
         session.UpdatedAt = now
     }
-
     s.DB.Save(&session)
-
-    // Check if all steps are completed
-    var totalSteps int64
-    var completedSteps int64
-    s.DB.Model(&OnboardingStep{}).Where("session_id = ?", req.SessionId).Count(&totalSteps)
-    s.DB.Model(&OnboardingStep{}).Where("session_id = ? AND completed = ?", req.SessionId, true).Count(&completedSteps)
-
-    if totalSteps >= 8 && completedSteps >= 8 {
-        session.Status = "completed"
-        session.CompletedAt = &now
-        s.DB.Save(&session)
-    }
 
     return &pb.Empty{}, nil
 }
 
-// UpdateDocumentStatus updates document verification status
+// UpdateDocumentStatus - Update document verification status
 func (s *OnboardingServer) UpdateDocumentStatus(ctx context.Context, req *pb.UpdateDocumentStatusRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
         return nil, status.Error(codes.NotFound, "session not found")
     }
-
     session.DocumentStatus = req.Status
     session.UpdatedAt = time.Now()
     s.DB.Save(&session)
-
     return &pb.Empty{}, nil
 }
 
-// UpdateBackgroundStatus updates background check status
+// UpdateBackgroundStatus - Update background check status
 func (s *OnboardingServer) UpdateBackgroundStatus(ctx context.Context, req *pb.UpdateBackgroundStatusRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
         return nil, status.Error(codes.NotFound, "session not found")
     }
-
     session.BackgroundStatus = req.Status
     session.UpdatedAt = time.Now()
     s.DB.Save(&session)
-
     return &pb.Empty{}, nil
 }
 
-// UpdateTrainingStatus updates training completion status
+// UpdateTrainingStatus - Update training status
 func (s *OnboardingServer) UpdateTrainingStatus(ctx context.Context, req *pb.UpdateTrainingStatusRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
         return nil, status.Error(codes.NotFound, "session not found")
     }
-
     session.TrainingStatus = req.Status
     session.UpdatedAt = time.Now()
     s.DB.Save(&session)
-
     return &pb.Empty{}, nil
 }
 
-// UpdatePaymentStatus updates Stripe Connect status
+// UpdatePaymentStatus - Update payment setup status
 func (s *OnboardingServer) UpdatePaymentStatus(ctx context.Context, req *pb.UpdatePaymentStatusRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
         return nil, status.Error(codes.NotFound, "session not found")
     }
-
     session.PaymentStatus = req.Status
     session.UpdatedAt = time.Now()
     s.DB.Save(&session)
-
     return &pb.Empty{}, nil
 }
 
-// AdminApprove approves a driver's onboarding application
+// AdminApprove - Admin approves driver
 func (s *OnboardingServer) AdminApprove(ctx context.Context, req *pb.AdminApproveRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
@@ -288,15 +251,12 @@ func (s *OnboardingServer) AdminApprove(ctx context.Context, req *pb.AdminApprov
     session.Status = "completed"
     session.CompletedAt = &now
     session.UpdatedAt = now
-
-    if err := s.DB.Save(&session).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to approve onboarding")
-    }
+    s.DB.Save(&session)
 
     return &pb.Empty{}, nil
 }
 
-// AdminReject rejects a driver's onboarding application
+// AdminReject - Admin rejects driver
 func (s *OnboardingServer) AdminReject(ctx context.Context, req *pb.AdminRejectRequest) (*pb.Empty, error) {
     var session OnboardingSession
     if err := s.DB.Where("id = ?", req.SessionId).First(&session).Error; err != nil {
@@ -307,34 +267,27 @@ func (s *OnboardingServer) AdminReject(ctx context.Context, req *pb.AdminRejectR
     session.AdminReviewedBy = req.AdminId
     session.AdminReviewedAt = &time.Now{}
     session.UpdatedAt = time.Now()
-
-    if err := s.DB.Save(&session).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to reject onboarding")
-    }
+    s.DB.Save(&session)
 
     return &pb.Empty{}, nil
 }
 
-// ListPendingApplications lists onboarding applications pending admin review
+// ListPendingApplications - List pending applications
 func (s *OnboardingServer) ListPendingApplications(ctx context.Context, req *pb.ListPendingApplicationsRequest) (*pb.ListPendingApplicationsResponse, error) {
     var sessions []OnboardingSession
-    query := s.DB.Where("status = ? AND admin_approved = ?", "in_progress", false)
-
-    if err := query.Find(&sessions).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to list pending applications")
-    }
+    s.DB.Where("status = ? AND admin_approved = ?", "in_progress", false).Find(&sessions)
 
     var pbSessions []*pb.OnboardingSummary
     for _, sess := range sessions {
         pbSessions = append(pbSessions, &pb.OnboardingSummary{
-            SessionId:      sess.ID,
-            DriverId:       sess.DriverID,
-            Email:          sess.Email,
-            Phone:          sess.Phone,
-            CurrentStep:    int32(sess.CurrentStep),
-            DocumentStatus: sess.DocumentStatus,
+            SessionId:        sess.ID,
+            DriverId:         sess.DriverID,
+            Email:            sess.Email,
+            Phone:            sess.Phone,
+            CurrentStep:      int32(sess.CurrentStep),
+            DocumentStatus:   sess.DocumentStatus,
             BackgroundStatus: sess.BackgroundStatus,
-            CreatedAt:      sess.CreatedAt.Unix(),
+            CreatedAt:        sess.CreatedAt.Unix(),
         })
     }
 
@@ -404,5 +357,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Onboarding Service stopped")
 }
