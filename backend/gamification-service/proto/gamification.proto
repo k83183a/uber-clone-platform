@@ -1,11 +1,77 @@
 syntax = "proto3";
+
 package gamification;
 option go_package = "github.com/uber-clone/gamification-service/proto";
+
 service GamificationService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ListActiveChallenges(ListChallengesRequest) returns (ListChallengesResponse);
+    rpc GetLeaderboard(GetLeaderboardRequest) returns (LeaderboardResponse);
+    rpc UpdateDriverProgress(UpdateProgressRequest) returns (Empty);
+    rpc CreateChallenge(CreateChallengeRequest) returns (Challenge);
+    rpc GetDriverStats(GetDriverStatsRequest) returns (DriverStatsResponse);
 }
+
+message ListChallengesRequest {
+    string driver_id = 1;
+}
+
+message Challenge {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    int32 goal = 4;
+    double bonus_amount = 5;
+    int32 progress = 6;
+    bool completed = 7;
+    int64 start_date = 8;
+    int64 end_date = 9;
+}
+
+message ListChallengesResponse {
+    repeated Challenge challenges = 1;
+}
+
+message GetLeaderboardRequest {
+    string period = 1; // weekly, monthly
+    int32 limit = 2;
+}
+
+message LeaderboardEntry {
+    string driver_id = 1;
+    string driver_name = 2;
+    int32 rank = 3;
+    int32 total_trips = 4;
+    double total_earnings = 5;
+}
+
+message LeaderboardResponse {
+    repeated LeaderboardEntry entries = 1;
+}
+
+message UpdateProgressRequest {
+    string driver_id = 1;
+    string ride_id = 2;
+    double driver_rating = 3;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
+
+message CreateChallengeRequest {
+    string name = 1;
+    string description = 2;
+    string challenge_type = 3;
+    int32 goal = 4;
+    double bonus_amount = 5;
+    int64 start_date = 6;
+    int64 end_date = 7;
+}
+
+message GetDriverStatsRequest {
+    string driver_id = 1;
+}
+
+message DriverStatsResponse {
+    int32 completed_challenges = 1;
+    int32 current_rank = 2;
+    int32 total_trips = 3;
 }
