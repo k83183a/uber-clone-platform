@@ -2,10 +2,12 @@ package main
 
 import (
     "context"
+    "encoding/json"
     "log"
     "net"
     "os"
     "os/signal"
+    "strings"
     "syscall"
     "time"
 
@@ -19,38 +21,35 @@ import (
     pb "github.com/uber-clone/operator-service/proto"
 )
 
-// Operator represents a legal entity operating in a region
 type Operator struct {
     ID               string    `gorm:"primaryKey"`
     Name             string    `gorm:"not null"`
     BusinessModel    string    `gorm:"not null"` // principal, agent
-    CommissionPercent float64  `gorm:"default:0"`
-    Regions          string    `gorm:"type:text"` // JSON array of region names
+    CommissionPercent float64   `gorm:"default:0"`
+    Regions          string    `gorm:"type:text"` // JSON array
     IsActive         bool      `gorm:"default:true"`
     CreatedAt        time.Time
     UpdatedAt        time.Time
 }
 
-// OperatorServer handles gRPC requests
 type OperatorServer struct {
     pb.UnimplementedOperatorServiceServer
     DB *gorm.DB
 }
 
-// GetOperatorForRegion returns the operator assigned to a region
+// GetOperatorForRegion - Get operator for a given region
 func (s *OperatorServer) GetOperatorForRegion(ctx context.Context, req *pb.GetOperatorRequest) (*pb.OperatorResponse, error) {
     var operators []Operator
     if err := s.DB.Where("is_active = ?", true).Find(&operators).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to fetch operators")
     }
 
+    region := strings.ToLower(req.Region)
     for _, op := range operators {
         var regions []string
-        if err := json.Unmarshal([]byte(op.Regions), &regions); err != nil {
-            continue
-        }
+        json.Unmarshal([]byte(op.Regions), &regions)
         for _, r := range regions {
-            if strings.EqualFold(r, req.Region) {
+            if strings.EqualFold(r, region) {
                 return &pb.OperatorResponse{
                     OperatorId:       op.ID,
                     Name:             op.Name,
@@ -62,17 +61,17 @@ func (s *OperatorServer) GetOperatorForRegion(ctx context.Context, req *pb.GetOp
         }
     }
 
-    // Return default operator if none found
+    // Default fallback
     return &pb.OperatorResponse{
-        OperatorId:       "default_operator",
+        OperatorId:       "default",
         Name:             "Default Operator",
         BusinessModel:    "principal",
         CommissionPercent: 0,
-        Regions:          []string{"default"},
+        Regions:          []string{region},
     }, nil
 }
 
-// ListOperators returns all operators
+// ListOperators - List all active operators
 func (s *OperatorServer) ListOperators(ctx context.Context, req *pb.Empty) (*pb.OperatorsList, error) {
     var operators []Operator
     if err := s.DB.Where("is_active = ?", true).Find(&operators).Error; err != nil {
@@ -83,7 +82,6 @@ func (s *OperatorServer) ListOperators(ctx context.Context, req *pb.Empty) (*pb.
     for _, op := range operators {
         var regions []string
         json.Unmarshal([]byte(op.Regions), &regions)
-
         pbOperators = append(pbOperators, &pb.Operator{
             Id:               op.ID,
             Name:             op.Name,
@@ -96,7 +94,7 @@ func (s *OperatorServer) ListOperators(ctx context.Context, req *pb.Empty) (*pb.
     return &pb.OperatorsList{Operators: pbOperators}, nil
 }
 
-// CreateOperator creates a new operator (admin endpoint)
+// CreateOperator - Create a new operator (admin)
 func (s *OperatorServer) CreateOperator(ctx context.Context, req *pb.CreateOperatorRequest) (*pb.Operator, error) {
     regionsJSON, _ := json.Marshal(req.Regions)
 
@@ -124,7 +122,7 @@ func (s *OperatorServer) CreateOperator(ctx context.Context, req *pb.CreateOpera
     }, nil
 }
 
-// UpdateOperator updates an existing operator
+// UpdateOperator - Update an existing operator
 func (s *OperatorServer) UpdateOperator(ctx context.Context, req *pb.UpdateOperatorRequest) (*pb.Operator, error) {
     var operator Operator
     if err := s.DB.Where("id = ?", req.Id).First(&operator).Error; err != nil {
@@ -150,16 +148,19 @@ func (s *OperatorServer) UpdateOperator(ctx context.Context, req *pb.UpdateOpera
         return nil, status.Error(codes.Internal, "failed to update operator")
     }
 
+    var regions []string
+    json.Unmarshal([]byte(operator.Regions), &regions)
+
     return &pb.Operator{
         Id:               operator.ID,
         Name:             operator.Name,
         BusinessModel:    operator.BusinessModel,
-        Regions:          req.Regions,
+        Regions:          regions,
         CommissionPercent: operator.CommissionPercent,
     }, nil
 }
 
-// DeleteOperator soft-deletes an operator
+// DeleteOperator - Delete an operator (soft delete)
 func (s *OperatorServer) DeleteOperator(ctx context.Context, req *pb.DeleteOperatorRequest) (*pb.Empty, error) {
     if err := s.DB.Where("id = ?", req.Id).Delete(&Operator{}).Error; err != nil {
         return nil, status.Error(codes.Internal, "failed to delete operator")
@@ -244,5 +245,4 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
-    log.Println("Operator Service stopped")
 }
