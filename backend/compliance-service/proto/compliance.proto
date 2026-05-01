@@ -1,11 +1,62 @@
 syntax = "proto3";
+
 package compliance;
 option go_package = "github.com/uber-clone/compliance-service/proto";
+
 service ComplianceService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc TriggerDBCheck(DBCheckRequest) returns (CheckResponse);
+    rpc TriggerDVLACheck(DVLACheckRequest) returns (CheckResponse);
+    rpc TriggerRightToWorkCheck(RightToWorkCheckRequest) returns (CheckResponse);
+    rpc GetCheckStatus(GetCheckStatusRequest) returns (CheckStatusResponse);
+    rpc GetDriverComplianceStatus(GetDriverComplianceStatusRequest) returns (DriverComplianceStatusResponse);
 }
+
+message DBCheckRequest {
+    string driver_id = 1;
+    string full_name = 2;
+    string date_of_birth = 3;
+    string address = 4;
+    string consent_token = 5;
+}
+
+message DVLACheckRequest {
+    string driver_id = 1;
+    string licence_number = 2;
+    string postcode = 3;
+}
+
+message RightToWorkCheckRequest {
+    string driver_id = 1;
+    string passport_number = 2;
+    string share_code = 3;
+}
+
+message CheckResponse {
+    string check_id = 1;
+    string status = 2;
+    string message = 3;
+}
+
+message GetCheckStatusRequest {
+    string check_id = 1;
+    string check_type = 2; // dbs, dvla, right_to_work
+}
+
+message CheckStatusResponse {
+    string status = 1;
+    int64 completed_at = 2;
+    string result_data = 3;
+}
+
+message GetDriverComplianceStatusRequest {
+    string driver_id = 1;
+}
+
+message DriverComplianceStatusResponse {
+    string dbs_status = 1;
+    string dvla_status = 2;
+    string right_to_work_status = 3;
+    bool all_passed = 4;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
