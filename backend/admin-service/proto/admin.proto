@@ -1,0 +1,245 @@
+syntax = "proto3";
+
+package admin;
+option go_package = "github.com/uber-clone/admin-service/proto";
+
+service AdminService {
+    rpc Login(LoginRequest) returns (LoginResponse);
+    rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+    rpc GetUserDetails(GetUserDetailsRequest) returns (UserDetailsResponse);
+    rpc SuspendUser(SuspendUserRequest) returns (Empty);
+    rpc ListDrivers(ListDriversRequest) returns (ListDriversResponse);
+    rpc ApproveDriver(ApproveDriverRequest) returns (Empty);
+    rpc RejectDriver(RejectDriverRequest) returns (Empty);
+    rpc BulkSuspendDrivers(BulkSuspendDriversRequest) returns (BulkOperationResponse);
+    rpc ListStores(ListStoresRequest) returns (ListStoresResponse);
+    rpc GetDashboardStats(Empty) returns (DashboardStatsResponse);
+    rpc GetRevenueReport(GetRevenueReportRequest) returns (RevenueReportResponse);
+    rpc GetRideStats(GetRideStatsRequest) returns (RideStatsResponse);
+    rpc CreateAdmin(CreateAdminRequest) returns (AdminResponse);
+    rpc ListAdmins(ListAdminsRequest) returns (ListAdminsResponse);
+    rpc UpdateAdmin(UpdateAdminRequest) returns (AdminResponse);
+    rpc DeleteAdmin(DeleteAdminRequest) returns (Empty);
+    rpc GetAuditLogs(GetAuditLogsRequest) returns (AuditLogsResponse);
+}
+
+message LoginRequest {
+    string email = 1;
+    string password = 2;
+    string ip_address = 3;
+}
+
+message LoginResponse {
+    string token = 1;
+    string admin_id = 2;
+    string full_name = 3;
+    string role = 4;
+    int64 expires_in = 5;
+}
+
+message ListUsersRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+    string role = 3;
+    string status = 4;
+}
+
+message UserInfo {
+    string user_id = 1;
+    string email = 2;
+    string full_name = 3;
+    string phone = 4;
+    string role = 5;
+    string status = 6;
+    int64 created_at = 7;
+}
+
+message ListUsersResponse {
+    repeated UserInfo users = 1;
+    int32 total = 2;
+}
+
+message GetUserDetailsRequest {
+    string user_id = 1;
+}
+
+message UserDetailsResponse {
+    string user_id = 1;
+    string email = 2;
+    string full_name = 3;
+    string phone = 4;
+    string role = 5;
+    string status = 6;
+    int64 created_at = 7;
+    int64 last_active = 8;
+    double total_spent = 9;
+    int32 total_rides = 10;
+}
+
+message SuspendUserRequest {
+    string user_id = 1;
+    string admin_id = 2;
+    string reason = 3;
+}
+
+message ListDriversRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+    string status = 3;
+}
+
+message DriverInfo {
+    string driver_id = 1;
+    string user_id = 2;
+    string full_name = 3;
+    string phone = 4;
+    string status = 5;
+    double rating = 6;
+    int32 total_trips = 7;
+    int64 created_at = 8;
+}
+
+message ListDriversResponse {
+    repeated DriverInfo drivers = 1;
+    int32 total = 2;
+}
+
+message ApproveDriverRequest {
+    string driver_id = 1;
+    string admin_id = 2;
+}
+
+message RejectDriverRequest {
+    string driver_id = 1;
+    string admin_id = 2;
+    string reason = 3;
+}
+
+message BulkSuspendDriversRequest {
+    repeated string driver_ids = 1;
+    string admin_id = 2;
+    string reason = 3;
+}
+
+message BulkOperationResponse {
+    int32 success_count = 1;
+    int32 failed_count = 2;
+    repeated string failed_ids = 3;
+}
+
+message ListStoresRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+    string store_type = 3;
+}
+
+message StoreInfo {
+    string store_id = 1;
+    string name = 2;
+    string store_type = 3;
+    string status = 4;
+    double rating = 5;
+    int64 created_at = 6;
+}
+
+message ListStoresResponse {
+    repeated StoreInfo stores = 1;
+    int32 total = 2;
+}
+
+message Empty {}
+
+message DashboardStatsResponse {
+    int32 total_users = 1;
+    int32 total_drivers = 2;
+    int32 total_rides_today = 3;
+    double total_revenue_today = 4;
+    int32 active_drivers = 5;
+    int32 pending_drivers = 6;
+}
+
+message GetRevenueReportRequest {
+    string period = 1; // day, week, month
+    int64 start_date = 2;
+    int64 end_date = 3;
+}
+
+message DailyRevenue {
+    string date = 1;
+    double revenue = 2;
+}
+
+message RevenueReportResponse {
+    repeated DailyRevenue daily_revenue = 1;
+    double total_revenue = 2;
+}
+
+message GetRideStatsRequest {
+    string period = 1;
+}
+
+message RideStatsResponse {
+    int32 total_rides = 1;
+    int32 completed_rides = 2;
+    int32 cancelled_rides = 3;
+    double average_rating = 4;
+}
+
+message CreateAdminRequest {
+    string email = 1;
+    string password = 2;
+    string full_name = 3;
+    string role = 4;
+    string created_by = 5;
+}
+
+message AdminResponse {
+    string id = 1;
+    string email = 2;
+    string full_name = 3;
+    string role = 4;
+    bool is_active = 5;
+}
+
+message ListAdminsRequest {
+    int32 page = 1;
+    int32 page_size = 2;
+}
+
+message ListAdminsResponse {
+    repeated AdminResponse admins = 1;
+    int32 total = 2;
+}
+
+message UpdateAdminRequest {
+    string admin_id = 1;
+    string full_name = 2;
+    string role = 3;
+    string password = 4;
+}
+
+message DeleteAdminRequest {
+    string admin_id = 1;
+}
+
+message GetAuditLogsRequest {
+    string admin_id = 1;
+    string action = 2;
+    int32 page = 3;
+    int32 page_size = 4;
+}
+
+message AuditLog {
+    string id = 1;
+    string admin_id = 2;
+    string action = 3;
+    string resource = 4;
+    string resource_id = 5;
+    string details = 6;
+    int64 created_at = 7;
+}
+
+message AuditLogsResponse {
+    repeated AuditLog logs = 1;
+    int32 total = 2;
+}
