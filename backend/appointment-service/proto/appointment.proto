@@ -1,11 +1,137 @@
 syntax = "proto3";
+
 package appointment;
 option go_package = "github.com/uber-clone/appointment-service/proto";
+
 service AppointmentService {
-  rpc Health(Empty) returns (HealthResponse);
+    rpc ListProviders(ListProvidersRequest) returns (ListProvidersResponse);
+    rpc GetProvider(GetProviderRequest) returns (ServiceProvider);
+    rpc ListServices(ListServicesRequest) returns (ListServicesResponse);
+    rpc GetAvailableSlots(GetAvailableSlotsRequest) returns (AvailableSlotsResponse);
+    rpc CreateAppointment(CreateAppointmentRequest) returns (AppointmentResponse);
+    rpc GetAppointment(GetAppointmentRequest) returns (AppointmentDetailResponse);
+    rpc CancelAppointment(CancelAppointmentRequest) returns (Empty);
+    rpc ListUserAppointments(ListUserAppointmentsRequest) returns (ListAppointmentsResponse);
 }
+
+message ListProvidersRequest {
+    double latitude = 1;
+    double longitude = 2;
+    string type = 3;
+    int32 page = 4;
+    int32 page_size = 5;
+}
+
+message ServiceProvider {
+    string id = 1;
+    string name = 2;
+    string type = 3;
+    string description = 4;
+    string address = 5;
+    double latitude = 6;
+    double longitude = 7;
+    string phone = 8;
+    string image_url = 9;
+    double rating = 10;
+}
+
+message ListProvidersResponse {
+    repeated ServiceProvider providers = 1;
+    int32 total = 2;
+}
+
+message GetProviderRequest {
+    string id = 1;
+}
+
+message ListServicesRequest {
+    string provider_id = 1;
+}
+
+message Service {
+    string id = 1;
+    string name = 2;
+    string description = 3;
+    int32 duration_min = 4;
+    double price = 5;
+    double discount_price = 6;
+}
+
+message ListServicesResponse {
+    repeated Service services = 1;
+}
+
+message GetAvailableSlotsRequest {
+    string provider_id = 1;
+    string staff_id = 2;
+    int64 date = 3;
+}
+
+message TimeSlot {
+    string id = 1;
+    int64 start_time = 2;
+    int64 end_time = 3;
+}
+
+message AvailableSlotsResponse {
+    repeated TimeSlot slots = 1;
+}
+
+message CreateAppointmentRequest {
+    string user_id = 1;
+    string provider_id = 2;
+    string staff_id = 3;
+    string service_id = 4;
+    string slot_id = 5;
+    int64 date = 6;
+    int64 start_time = 7;
+    string notes = 8;
+}
+
+message AppointmentResponse {
+    string id = 1;
+    string booking_ref = 2;
+    string status = 3;
+    int64 start_time = 4;
+    int64 end_time = 5;
+}
+
+message AppointmentDetailResponse {
+    string id = 1;
+    string booking_ref = 2;
+    string user_id = 3;
+    string provider_id = 4;
+    string staff_id = 5;
+    string service_id = 6;
+    string service_name = 7;
+    double price = 8;
+    int64 date = 9;
+    int64 start_time = 10;
+    int64 end_time = 11;
+    string status = 12;
+    string notes = 13;
+    int64 created_at = 14;
+}
+
+message GetAppointmentRequest {
+    string id = 1;
+    string booking_ref = 2;
+}
+
+message CancelAppointmentRequest {
+    string appointment_id = 1;
+    string cancelled_by = 2;
+}
+
+message ListUserAppointmentsRequest {
+    string user_id = 1;
+    int32 page = 2;
+    int32 page_size = 3;
+}
+
+message ListAppointmentsResponse {
+    repeated AppointmentResponse appointments = 1;
+    int32 total = 2;
+}
+
 message Empty {}
-message HealthResponse {
-  string status = 1;
-  int64 timestamp = 2;
-}
