@@ -1,86 +1,46 @@
-package service
+package repository
 
 import (
     "errors"
-    "time"
 
-    "github.com/golang-jwt/jwt/v5"
-    "golang.org/x/crypto/bcrypt"
+    "gorm.io/gorm"
     "github.com/uber-clone/auth-service/internal/model"
-    "github.com/uber-clone/auth-service/internal/repository"
 )
 
-type AuthService struct {
-    repo      *repository.AuthRepository
-    jwtSecret []byte
+type AuthRepository struct {
+    db *gorm.DB
 }
 
-func NewAuthService(repo *repository.AuthRepository, jwtSecret []byte) *AuthService {
-    return &AuthService{repo: repo, jwtSecret: jwtSecret}
+func NewAuthRepository(db *gorm.DB) *AuthRepository {
+    return &AuthRepository{db: db}
 }
 
-func (s *AuthService) Register(email, phone, password, role string) (*model.User, string, error) {
-    existing, _ := s.repo.GetUserByEmail(email)
-    if existing != nil {
-        return nil, "", errors.New("user already exists")
-    }
-
-    hashed, _ := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-    user := &model.User{
-        ID:        generateUUID(),
-        Email:     email,
-        Phone:     phone,
-        Password:  string(hashed),
-        Role:      role,
-        CreatedAt: time.Now(),
-        UpdatedAt: time.Now(),
-    }
-    if err := s.repo.CreateUser(user); err != nil {
-        return nil, "", err
-    }
-
-    token, err := s.generateJWT(user.ID, user.Role)
-    return user, token, err
+func (r *AuthRepository) CreateUser(user *model.User) error {
+    return r.db.Create(user).Error
 }
 
-func (s *AuthService) Login(email, password string) (*model.User, string, error) {
-    user, err := s.repo.GetUserByEmail(email)
-    if err != nil || user == nil {
-        return nil, "", errors.New("invalid credentials")
+func (r *AuthRepository) GetUserByEmail(email string) (*model.User, error) {
+    var user model.User
+    err := r.db.Where("email = ?", email).First(&user).Error
+    if errors.Is(err, gorm.ErrRecordNotFound) {
+        return nil, nil
     }
-
-    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-        return nil, "", errors.New("invalid credentials")
-    }
-
-    token, err := s.generateJWT(user.ID, user.Role)
-    return user, token, err
+    return &user, err
 }
 
-func (s *AuthService) ValidateToken(tokenString string) (string, string, bool) {
-    token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-        return s.jwtSecret, nil
-    })
-    if err != nil || !token.Valid {
-        return "", "", false
+func (r *AuthRepository) GetUserByID(id string) (*model.User, error) {
+    var user model.User
+    err := r.db.Where("id = ?", id).First(&user).Error
+    if errors.Is(err, gorm.ErrRecordNotFound) {
+        return nil, nil
     }
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        return "", "", false
-    }
-    return claims["user_id"].(string), claims["role"].(string), true
+    return &user, err
 }
 
-func (s *AuthService) generateJWT(userID, role string) (string, error) {
-    claims := jwt.MapClaims{
-        "user_id": userID,
-        "role":    role,
-        "exp":     time.Now().Add(24 * time.Hour).Unix(),
-    }
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    return token.SignedString(s.jwtSecret)
+func (r *AuthRepository) UpdateRefreshToken(userID, refreshToken string) error {
+    return r.db.Model(&model.User{}).Where("id = ?", userID).Update("refresh_token", refreshToken).Error
 }
 
-func generateUUID() string {
-    return "user_" + time.Now().Format("20060102150405")
+func (r *AuthRepository) UpdateLastLogin(userID string) error {
+    return r.db.Model(&model.User{}).Where("id = ?", userID).Update("last_login", time.Now()).Error
 }
