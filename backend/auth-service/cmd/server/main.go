@@ -1,150 +1,36 @@
 package main
 
 import (
-    "context"
     "log"
     "net"
+    "net/http"
     "os"
     "os/signal"
     "syscall"
     "time"
 
-    "github.com/golang-jwt/jwt/v5"
     "github.com/joho/godotenv"
-    "golang.org/x/crypto/bcrypt"
+    "github.com/prometheus/client_golang/prometheus/promhttp"
     "google.golang.org/grpc"
-    "google.golang.org/grpc/codes"
-    "google.golang.org/grpc/status"
+    "google.golang.org/grpc/health/grpc_health_v1"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
 
     pb "github.com/uber-clone/auth-service/proto"
+    "github.com/uber-clone/auth-service/internal/handler"
+    "github.com/uber-clone/auth-service/internal/service"
+    "github.com/uber-clone/auth-service/internal/repository"
+    "github.com/uber-clone/auth-service/internal/kafka"
 )
 
-type User struct {
-    ID        string `gorm:"primaryKey"`
-    Email     string `gorm:"uniqueIndex;not null"`
-    Phone     string `gorm:"uniqueIndex;not null"`
-    Password  string `gorm:"not null"`
-    Role      string `gorm:"default:'rider'"`
-    CreatedAt time.Time
-    UpdatedAt time.Time
+type healthServer struct{}
+
+func (s *healthServer) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+    return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
 }
 
-type AuthServer struct {
-    pb.UnimplementedAuthServiceServer
-    DB        *gorm.DB
-    JWTSecret []byte
-}
-
-func (s *AuthServer) Register(ctx context.Context, req *pb.RegisterRequest) (*pb.AuthResponse, error) {
-    // Check if user exists
-    var existing User
-    if err := s.DB.Where("email = ? OR phone = ?", req.Email, req.Phone).First(&existing).Error; err == nil {
-        return nil, status.Error(codes.AlreadyExists, "user already exists")
-    }
-
-    // Hash password
-    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to hash password")
-    }
-
-    // Create user
-    user := User{
-        ID:        generateUUID(),
-        Email:     req.Email,
-        Phone:     req.Phone,
-        Password:  string(hashedPassword),
-        Role:      req.Role,
-        CreatedAt: time.Now(),
-        UpdatedAt: time.Now(),
-    }
-    if err := s.DB.Create(&user).Error; err != nil {
-        return nil, status.Error(codes.Internal, "failed to create user")
-    }
-
-    // Generate JWT
-    token, err := s.generateJWT(user.ID, user.Role)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to generate token")
-    }
-
-    return &pb.AuthResponse{
-        Token:     token,
-        UserId:    user.ID,
-        Email:     user.Email,
-        Role:      user.Role,
-        ExpiresIn: 86400,
-    }, nil
-}
-
-func (s *AuthServer) Login(ctx context.Context, req *pb.LoginRequest) (*pb.AuthResponse, error) {
-    var user User
-    if err := s.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
-        return nil, status.Error(codes.NotFound, "user not found")
-    }
-
-    if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
-        return nil, status.Error(codes.Unauthenticated, "invalid credentials")
-    }
-
-    token, err := s.generateJWT(user.ID, user.Role)
-    if err != nil {
-        return nil, status.Error(codes.Internal, "failed to generate token")
-    }
-
-    return &pb.AuthResponse{
-        Token:     token,
-        UserId:    user.ID,
-        Email:     user.Email,
-        Role:      user.Role,
-        ExpiresIn: 86400,
-    }, nil
-}
-
-func (s *AuthServer) ValidateToken(ctx context.Context, req *pb.ValidateRequest) (*pb.ValidateResponse, error) {
-    token, err := jwt.Parse(req.Token, func(token *jwt.Token) (interface{}, error) {
-        return s.JWTSecret, nil
-    })
-    if err != nil || !token.Valid {
-        return &pb.ValidateResponse{Valid: false}, nil
-    }
-
-    claims, ok := token.Claims.(jwt.MapClaims)
-    if !ok {
-        return &pb.ValidateResponse{Valid: false}, nil
-    }
-
-    return &pb.ValidateResponse{
-        Valid:  true,
-        UserId: claims["user_id"].(string),
-        Role:   claims["role"].(string),
-    }, nil
-}
-
-func (s *AuthServer) generateJWT(userID, role string) (string, error) {
-    claims := jwt.MapClaims{
-        "user_id": userID,
-        "role":    role,
-        "exp":     time.Now().Add(24 * time.Hour).Unix(),
-        "iat":     time.Now().Unix(),
-    }
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    return token.SignedString(s.JWTSecret)
-}
-
-func generateUUID() string {
-    return "user_" + time.Now().Format("20060102150405") + "_" + randomString(6)
-}
-
-func randomString(n int) string {
-    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-    b := make([]byte, n)
-    for i := range b {
-        b[i] = letters[time.Now().UnixNano()%int64(len(letters))]
-    }
-    return string(b)
+func (s *healthServer) Watch(req *grpc_health_v1.HealthCheckRequest, stream grpc_health_v1.Health_WatchServer) error {
+    return nil
 }
 
 func main() {
@@ -155,23 +41,49 @@ func main() {
         dsn = "host=postgres user=postgres password=postgres dbname=authdb port=5432 sslmode=disable"
     }
 
-    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+        PrepareStmt: true,
+    })
     if err != nil {
         log.Fatal("Failed to connect to database:", err)
     }
 
-    db.AutoMigrate(&User{})
+    sqlDB, _ := db.DB()
+    sqlDB.SetMaxIdleConns(10)
+    sqlDB.SetMaxOpenConns(100)
+    sqlDB.SetConnMaxLifetime(time.Hour)
+
+    db.AutoMigrate(&model.User{})
 
     jwtSecret := []byte(os.Getenv("JWT_SECRET"))
     if len(jwtSecret) == 0 {
-        jwtSecret = []byte("default-super-secret-key-change-in-production")
+        log.Fatal("JWT_SECRET environment variable is required")
     }
 
-    grpcServer := grpc.NewServer()
-    pb.RegisterAuthServiceServer(grpcServer, &AuthServer{
-        DB:        db,
-        JWTSecret: jwtSecret,
+    repo := repository.NewAuthRepository(db)
+    authService := service.NewAuthService(repo, jwtSecret)
+
+    kafkaBroker := os.Getenv("KAFKA_BROKER")
+    if kafkaBroker != "" {
+        kafkaProducer, _ := kafka.NewProducer(kafkaBroker)
+        defer kafkaProducer.Close()
+    }
+
+    grpcHandler := handler.NewGrpcHandler(authService)
+
+    grpcServer := grpc.NewServer(
+        grpc.MaxRecvMsgSize(10*1024*1024),
+        grpc.MaxSendMsgSize(10*1024*1024),
+    )
+    pb.RegisterAuthServiceServer(grpcServer, grpcHandler)
+    grpc_health_v1.RegisterHealthServer(grpcServer, &healthServer{})
+
+    http.Handle("/metrics", promhttp.Handler())
+    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte(`{"status":"ok"}`))
     })
+    go http.ListenAndServe(":9090", nil)
 
     lis, err := net.Listen("tcp", ":50051")
     if err != nil {
@@ -189,5 +101,6 @@ func main() {
     signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
     <-quit
     grpcServer.GracefulStop()
+    sqlDB.Close()
     log.Println("Auth Service stopped")
 }
